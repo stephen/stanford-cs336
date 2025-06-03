@@ -11,7 +11,7 @@ class _PairCount(TypedDict):
 
     count: int
     # refs is where this pair occurred. the ref is a pretoken tuple and the position of the pair.
-    refs: list[tuple[tuple[bytes, ...], int]]
+    refs: dict[tuple[bytes, ...], int]
 
 
 def bpe_tokenize(text: str, num_merges: int) -> list[bytes]:
@@ -30,16 +30,17 @@ def bpe_tokenize(text: str, num_merges: int) -> list[bytes]:
                 key = (a, b)
                 if key not in pairs:
                     # XXX: can we intern this?
-                    pairs[key] = {'count': 0, 'refs': []}
+                    pairs[key] = {'count': 0, 'refs': {}}
                 pairs[key]['count'] += count
-                pairs[key]['refs'].append((pretoken, i))
+                pairs[key]['refs'][pretoken] = i
 
         max_pair = max(pairs, key=lambda k: (pairs[k]["count"], k))
         vocab.append(b''.join(max_pair))
 
-        for old_key, i in pairs[max_pair]['refs']:
+        for old_key, i in pairs[max_pair]['refs'].items():
             key = old_key[:i] + (max_pair[0] + max_pair[1],) + old_key[i+2:]
             corpus[key] = corpus[old_key]
             del corpus[old_key]
+            # for all of the ones we touched, we should go back and re-count the tokens in it
 
     return vocab
