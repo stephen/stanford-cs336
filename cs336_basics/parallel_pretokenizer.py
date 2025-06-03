@@ -1,5 +1,9 @@
+import multiprocessing as mp
 import os
 from typing import BinaryIO
+
+from regex import W
+from .tokenizer import Corpus, merge_corpora, pretokenize_to_corpus
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -49,14 +53,25 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-## Usage
-with open(..., "rb") as f:
-    boundaries = find_chunk_boundaries(
-        f, num_processes, "<|endoftext|>".encode("utf-8"))
-
-    # The following is a serial implementation, but you can parallelize this
-    # by sending each start/end pair to a set of processes.
-    for start, end in zip(boundaries[:-1], boundaries[1:]):
+def process_chunk(start: int, end: int) -> Corpus:
+    with open("./data/TinyStoriesV2-GPT4-train.txt", "rb") as f:
         f.seek(start)
-        chunk = f.read(end - start).decode("utf-8", errors="ignore")
-        # Run pre-tokenization on your chunk and store the counts for each pre-token
+        corpus = pretokenize_to_corpus(f.read(end - start))
+        return corpus
+
+def parallel_pretokenize_path_to_corpus(
+        input_path: str,
+        processes: int = mp.cpu_count(),
+    ):
+    with open(input_path, "rb") as f:
+        boundaries = find_chunk_boundaries(
+            f, processes, "<|endoftext|>".encode("utf-8"))
+
+        jobs = [(start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
+
+        results: list[Corpus] = []
+        with mp.Pool(processes=processes) as pool:
+            results = pool.starmap(process_chunk, jobs)
+
+        corpus = merge_corpora(*results)
+        return corpus
