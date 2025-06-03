@@ -5,20 +5,23 @@ import regex as re
 
 PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode('utf-8')
 
-# _Token is a token. It may be one or more bytes.
+# Token is a token. It may be one or more bytes.
 Token = bytes
 
-# _Sequence is an arbitrary sequence of tokens.
+# Sequence is an arbitrary sequence of tokens.
 Sequence = tuple[Token, ...]
 
-# _Refs is a dict of sequence -> position in sequence for a token pair.
-_Refs = dict[Sequence, int]
+# _Refs is a dict of sequence -> positions in sequence for a token pair. A sequence may contain a pair
+# multiple times.
+_Refs = dict[Sequence, list[int]]
 
-# _TokenPair is a pair of tokens.
+# TokenPair is a pair of tokens.
 TokenPair = tuple[Token, Token]
 
+# Corpus is the input pretokenized corpus with frequencies.
 Corpus = dict[Sequence, int]
 
+# Vocab is the output dictionary of ID (index) -> bytes.
 Vocab = dict[int, bytes]
 
 class _TokenPairCounts(TypedDict):
@@ -33,28 +36,51 @@ def merge_corpora(*corpora: Corpus) -> Corpus:
                 rv[seq] += count
     return rv
 
+def bytes_split_iter(data: bytes, sep: bytes):
+    start = 0
+    while True:
+        pos = data.find(sep, start)
+        if pos == -1:
+            if start < len(data):
+                yield data[start:]
+            break
+        yield data[start:pos]
+        start = pos + len(sep)
+
 def pretokenize_to_corpus(text: bytes) -> Corpus:
-    # Corpus is the text of sequences to the count of times they happen.
-    corpus: dict[Sequence, int] = defaultdict(int)
-    for pretoken in re.finditer(PAT, text): # text is bytes, returns regex.finditer's result for bytes
-        g = pretoken.group()
-
-        # fast
-        key = struct.unpack('c' * len(g), g)
-
-        # medium slow
-        # key = tuple([g[i:i+1] for i in range(len(g))])
-
-        # slow
-        # mv = memoryview(g)
-        # key = tuple(mv[i:i+1] for i in range(len(mv)))
-
-        # slowest
-        # key = tuple(bytes([b]) for b in pretoken.group().encode('utf-8'))
-
-        corpus[key] += 1
+    corpus: Corpus = defaultdict(int)
+    for s in bytes_split_iter(text, b'<|endoftext|>'):
+        for pretoken in re.finditer(PAT, s):
+            g = pretoken.group()
+            key = struct.unpack('c' * len(g), g)
+            corpus[key] += 1
 
     return corpus
+
+def decode_seq(seq: Sequence) -> str:
+    def d(b: bytes) -> str:
+        try:
+            return b.decode('utf-8')
+        except:
+            return str(b)
+
+    return "'" + ','.join(d(b) for b in seq) + "'"
+
+def hex_seq(seq: Sequence) -> str:
+    return f"{''.join(['{:>8}'.format(b.hex()) for b in seq])}"
+
+# merge_at_positions expects positions to be in sorted order.
+def merge_at_positions(old_seq: Sequence, merged_pair: TokenPair, positions: list[int]) -> Sequence:
+    new_seq = old_seq
+    adjust = 0
+    for p in positions:
+        i = p - adjust
+        if new_seq[i:i+2] != merged_pair:
+            continue
+        new_seq = new_seq[:i] + (merged_pair[0] + merged_pair[1],) + new_seq[i+2:]
+        adjust += 1
+
+    return new_seq
 
 def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []) -> tuple[Vocab, list[TokenPair]]:
     vocab = list([b.to_bytes() for b in range(0, 256)])
@@ -63,7 +89,7 @@ def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []
 
     merges: list[TokenPair] = []
 
-   # pairs is the state of all token pairs in the corpus, pointing to where they happen in the corpus and the total count the pair happens.
+    # pairs is the state of all token pairs in the corpus, pointing to where they happen in the corpus and the total count the pair happens.
     pairs: dict[TokenPair, _TokenPairCounts] = {}
 
     # Go through each sequence that needs to be checked. At the start, this is the entire corpus but
@@ -75,11 +101,18 @@ def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []
             for i, pair in enumerate(zip(pretoken, pretoken[1:])):
                 if pair not in pairs:
                     pairs[pair] = {'count': 0, 'refs': {}}
-                pairs[pair]['refs'][pretoken] = i
+                if pretoken not in pairs[pair]['refs']:
+                    pairs[pair]['refs'][pretoken] = []
+                pairs[pair]['refs'][pretoken].append(i)
                 pairs[pair]['count'] += count
 
+
+        # debug assert: verify that we counted correctly.
+        # for p, c in pairs.items():
+        #     expected = sum([corpus[ref] * len(pos) for ref, pos in c['refs'].items()])
+        #     assert c['count'] == expected, f"{p=}, expected: {expected}, got: {c['count']}"
+
         # Figure out the max pair.
-        # XXX: We could maybe keep track of this state during the loop.
         max_pair = max(pairs, key=lambda k: (pairs[k]['count'], k))
         vocab.append(b''.join(max_pair))
         merges.append(max_pair)
@@ -88,8 +121,8 @@ def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []
         # changed due to max_pair.
         corpus_to_check = set()
         pairs_to_invalidate: set[tuple[TokenPair, Sequence, Sequence]] = set()
-        for old_seq, i in pairs[max_pair]['refs'].items():
-            new_seq = old_seq[:i] + (max_pair[0] + max_pair[1],) + old_seq[i+2:]
+        for old_seq, positions in pairs[max_pair]['refs'].items():
+            new_seq = merge_at_positions(old_seq, max_pair, positions)
 
             # For all pairs of the old sequence, remove their reference.
             for i, neighbor_pair in enumerate(zip(old_seq, old_seq[1:])):
@@ -100,8 +133,11 @@ def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []
             del corpus[old_seq]
 
         for (neighbor_pair, old_seq, new_seq) in pairs_to_invalidate:
+            occurences = pairs[neighbor_pair]['refs'][old_seq] # The token might appear multiple times.
             del pairs[neighbor_pair]['refs'][old_seq]
-            pairs[neighbor_pair]['count'] -= corpus[new_seq]
+
+            pairs[neighbor_pair]['count'] -= corpus[new_seq] * len(occurences)
+
+        del pairs[max_pair]
 
     return {i: v for i, v in enumerate(vocab)}, merges
-

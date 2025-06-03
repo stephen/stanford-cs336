@@ -24,6 +24,19 @@ def test_train_bpe_speed():
     assert end_time - start_time < 1.5
 
 
+def decode_seq(seq) -> str:
+    def d(b: bytes) -> str:
+        try:
+            return b.decode('utf-8')
+        except:
+            return str(b)
+
+    return "'" + ','.join(d(b) for b in seq) + "'"
+
+def hex_seq(seq) -> str:
+    return f"{''.join(['{:>8}'.format(b.hex()) for b in seq])}"
+
+
 def test_train_bpe():
     input_path = FIXTURES_PATH / "corpus.en"
     vocab, merges = run_train_bpe(
