@@ -60,7 +60,7 @@ def process_chunk(start: int, end: int) -> Corpus:
         return corpus
 
 def parallel_pretokenize_path_to_corpus(
-        input_path: str,
+        input_path: str | os.PathLike,
         processes: int = mp.cpu_count(),
     ):
     with open(input_path, "rb") as f:

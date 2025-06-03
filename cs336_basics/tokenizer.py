@@ -5,9 +5,6 @@ import regex as re
 
 PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode('utf-8')
 
-def pretokenize(input: bytes):
-    return re.finditer(PAT, input)
-
 # _Token is a token. It may be one or more bytes.
 Token = bytes
 
@@ -18,9 +15,11 @@ Sequence = tuple[Token, ...]
 _Refs = dict[Sequence, int]
 
 # _TokenPair is a pair of tokens.
-_TokenPair = tuple[Token, Token]
+TokenPair = tuple[Token, Token]
 
 Corpus = dict[Sequence, int]
+
+Vocab = dict[int, bytes]
 
 class _TokenPairCounts(TypedDict):
     count: int
@@ -37,7 +36,7 @@ def merge_corpora(*corpora: Corpus) -> Corpus:
 def pretokenize_to_corpus(text: bytes) -> Corpus:
     # Corpus is the text of sequences to the count of times they happen.
     corpus: dict[Sequence, int] = defaultdict(int)
-    for pretoken in pretokenize(text): # text is bytes, returns regex.finditer's result for bytes
+    for pretoken in re.finditer(PAT, text): # text is bytes, returns regex.finditer's result for bytes
         g = pretoken.group()
 
         # fast
@@ -57,12 +56,15 @@ def pretokenize_to_corpus(text: bytes) -> Corpus:
 
     return corpus
 
-def bpe_tokenize(corpus: Corpus, num_merges: int) -> list[bytes]:
+def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []) -> tuple[Vocab, list[TokenPair]]:
     vocab = list([b.to_bytes() for b in range(0, 256)])
-    vocab.append('<|endoftext|>'.encode('utf-8'))
+    for t in special_tokens:
+        vocab.append(t.encode('utf-8'))
+
+    merges: list[TokenPair] = []
 
    # pairs is the state of all token pairs in the corpus, pointing to where they happen in the corpus and the total count the pair happens.
-    pairs: dict[_TokenPair, _TokenPairCounts] = {}
+    pairs: dict[TokenPair, _TokenPairCounts] = {}
 
     # Go through each sequence that needs to be checked. At the start, this is the entire corpus but
     # later this is only sequences that need to be rechecked.
@@ -80,11 +82,12 @@ def bpe_tokenize(corpus: Corpus, num_merges: int) -> list[bytes]:
         # XXX: We could maybe keep track of this state during the loop.
         max_pair = max(pairs, key=lambda k: (pairs[k]['count'], k))
         vocab.append(b''.join(max_pair))
+        merges.append(max_pair)
 
         # Invalidate pairs only at the spots where the sequence changed because the underlying tokens
         # changed due to max_pair.
         corpus_to_check = set()
-        pairs_to_invalidate: set[tuple[_TokenPair, Sequence, Sequence]] = set()
+        pairs_to_invalidate: set[tuple[TokenPair, Sequence, Sequence]] = set()
         for old_seq, i in pairs[max_pair]['refs'].items():
             new_seq = old_seq[:i] + (max_pair[0] + max_pair[1],) + old_seq[i+2:]
 
@@ -100,5 +103,5 @@ def bpe_tokenize(corpus: Corpus, num_merges: int) -> list[bytes]:
             del pairs[neighbor_pair]['refs'][old_seq]
             pairs[neighbor_pair]['count'] -= corpus[new_seq]
 
-    return vocab
+    return {i: v for i, v in enumerate(vocab)}, merges
 
