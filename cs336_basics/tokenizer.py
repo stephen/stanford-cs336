@@ -1,10 +1,12 @@
 from collections import defaultdict
+import struct
+import time
 from typing import TypedDict
 import regex as re
 
-PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode('utf-8')
 
-def pretokenize(input: str):
+def pretokenize(input: bytes):
     return re.finditer(PAT, input)
 
 # _Token is a token. It may be one or more bytes.
@@ -20,15 +22,29 @@ _Refs = dict[_Sequence, int]
 _TokenPair = tuple[_Token, _Token]
 
 
-def bpe_tokenize(text: str, num_merges: int) -> list[bytes]:
+def bpe_tokenize(text: bytes, num_merges: int) -> list[bytes]:
     vocab = list([b.to_bytes() for b in range(0, 256)])
     vocab.append('<|endoftext|>'.encode('utf-8'))
 
     # Corpus is the text of sequences to the count of times they happen.
     corpus: dict[_Sequence, int] = defaultdict(int)
+    for pretoken in pretokenize(text): # text is bytes, returns regex.finditer's result for bytes
+        g = pretoken.group()
 
-    for pretoken in pretokenize(text):
-        corpus[tuple(bytes([b]) for b in pretoken.group().encode('utf-8'))] += 1
+        # fast
+        key = struct.unpack('c' * len(g), g)
+
+        # medium slow
+        # key = tuple([g[i:i+1] for i in range(len(g))])
+
+        # slow
+        # mv = memoryview(g)
+        # key = tuple(mv[i:i+1] for i in range(len(mv)))
+
+        # slowest
+        # key = tuple(bytes([b]) for b in pretoken.group().encode('utf-8'))
+
+        corpus[key] += 1
 
     # pairs is the state of all token pairs in the corpus, pointing to where they happen in the corpus.
     pairs: dict[_TokenPair, _Refs] = {}
@@ -67,3 +83,9 @@ def bpe_tokenize(text: str, num_merges: int) -> list[bytes]:
             del pairs[neighbor_pair][old_seq]
 
     return vocab
+
+with open("./data/TinyStoriesV2-GPT4-valid.txt", "rb") as f:
+    content = f.read()
+    start = time.perf_counter()
+    bpe_tokenize(content, 1000)
+    print("time", time.perf_counter() - start)
