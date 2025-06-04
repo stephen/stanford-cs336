@@ -32,25 +32,18 @@ def merge_corpora(*corpora: Corpus) -> Corpus:
     rv: Corpus = defaultdict(int)
     for c in corpora:
         for seq, count in c.items():
-            if seq not in rv:
-                rv[seq] += count
+            rv[seq] += count
     return rv
 
-def bytes_split_iter(data: bytes, sep: bytes):
-    start = 0
-    while True:
-        pos = data.find(sep, start)
-        if pos == -1:
-            if start < len(data):
-                yield data[start:]
-            break
-        yield data[start:pos]
-        start = pos + len(sep)
+def pretokenize_to_corpus(text: bytes, special_tokens: list[bytes] = ["<|endoftext|>".encode('utf-8')]) -> Corpus:
+    escaped_tokens: list[bytes] = [re.escape(token) for token in special_tokens]
+    pattern: bytes = b'|'.join(escaped_tokens)
 
-def pretokenize_to_corpus(text: bytes) -> Corpus:
     corpus: Corpus = defaultdict(int)
-    for s in bytes_split_iter(text, b'<|endoftext|>'):
-        for pretoken in re.finditer(PAT, s):
+    for chunk in re.splititer(pattern, text):
+        if not chunk:
+            continue
+        for pretoken in re.finditer(PAT, chunk):
             g = pretoken.group()
             key = struct.unpack('c' * len(g), g)
             corpus[key] += 1
@@ -82,7 +75,7 @@ def merge_at_positions(old_seq: Sequence, merged_pair: TokenPair, positions: lis
 
     return new_seq
 
-def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = []) -> tuple[Vocab, list[TokenPair]]:
+def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = ["<|endoftext|>"]) -> tuple[Vocab, list[TokenPair]]:
     vocab = list([b.to_bytes() for b in range(0, 256)])
     for t in special_tokens:
         vocab.append(t.encode('utf-8'))

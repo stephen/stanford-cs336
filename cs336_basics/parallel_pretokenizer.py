@@ -53,21 +53,23 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
-def process_chunk(input_path: str | os.PathLike, start: int, end: int) -> Corpus:
+def process_chunk(input_path: str | os.PathLike, special_tokens: list[bytes], start: int, end: int) -> Corpus:
     with open(input_path, "rb") as f:
         f.seek(start)
-        corpus = pretokenize_to_corpus(f.read(end - start))
+        corpus = pretokenize_to_corpus(f.read(end - start), special_tokens)
         return corpus
 
 def parallel_pretokenize_path_to_corpus(
         input_path: str | os.PathLike,
+        special_tokens: list[str] = ["<|endoftext|>"],
         processes: int = mp.cpu_count(),
     ):
     with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(
-            f, processes, "<|endoftext|>".encode("utf-8"))
+        boundaries = find_chunk_boundaries(f, processes, "<|endoftext|>".encode("utf-8"))
 
-        jobs = [(input_path, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
+        special_tokens_bytes = [t.encode('utf-8') for t in special_tokens]
+
+        jobs = [(input_path, special_tokens_bytes, start, end) for start, end in zip(boundaries[:-1], boundaries[1:])]
 
         results: list[Corpus] = []
         with mp.Pool(processes=processes) as pool:
