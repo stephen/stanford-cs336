@@ -24,6 +24,9 @@ Corpus = dict[Sequence, int]
 # Vocab is the output dictionary of ID (index) -> bytes.
 Vocab = dict[int, bytes]
 
+# Merges is a list of merges that were done, in order.
+Merges = list[TokenPair]
+
 class _TokenPairCounts(TypedDict):
     count: int
     refs: _Refs
@@ -75,7 +78,7 @@ def merge_at_positions(old_seq: Sequence, merged_pair: TokenPair, positions: lis
 
     return new_seq
 
-def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = ["<|endoftext|>"]) -> tuple[Vocab, list[TokenPair]]:
+def bpe_tokenize(corpus: Corpus, num_merges: int, special_tokens: list[str] = ["<|endoftext|>"]) -> tuple[Vocab, Merges]:
     vocab = list([b.to_bytes() for b in range(0, 256)])
     for t in special_tokens:
         vocab.append(t.encode('utf-8'))
