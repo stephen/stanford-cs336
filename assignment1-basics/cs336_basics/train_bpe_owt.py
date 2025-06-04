@@ -11,7 +11,7 @@ def test_tiny_stories_training_set():
     tokens, merges = bpe_tokenize(corpus, 10000)
     assert len(merges) == 10000
     assert len(tokens) == 10000 + 1 + 256
-    with open("data.pkl", "wb") as f:
+    with open("owt_train_vocab.pkl", "wb") as f:
         pickle.dump({
             "tokens": tokens,
             "merges": merges,
