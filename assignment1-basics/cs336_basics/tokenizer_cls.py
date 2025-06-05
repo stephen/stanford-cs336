@@ -1,8 +1,10 @@
+import regex as re
 import os
 import pickle
-from typing import Iterable
+import struct
+from typing import Iterable, Optional
 from cs336_basics.parallel_pretokenizer import parallel_pretokenize_path_to_corpus
-from cs336_basics.tokenizer import Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize_to_corpus
+from cs336_basics.tokenizer import PAT, Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize, pretokenize_to_corpus
 
 def train_tokenizer(
     input_path: str | os.PathLike,
@@ -21,12 +23,12 @@ class Tokenizer:
         self,
         vocab: Vocab,
         merges: Merges,
-        special_tokens: list[str] = [],
+        special_tokens: Optional[list[str]] = None,
     ):
         self.vocab = vocab
         self.reverse_vocab = {seq: id for id, seq in self.vocab.items()}
         self.merges = merges
-        self.special_tokens = [t.encode('utf-8') for t in special_tokens]
+        self.special_tokens = sorted([t.encode('utf-8') for t in (special_tokens or [])], reverse=True)
 
     @classmethod
     def from_files(
@@ -44,11 +46,16 @@ class Tokenizer:
     def encode(self, text: str) -> list[int]:
         return [id for id in self.encode_iterable([text])]
 
+
     def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
         for chunk in iterable:
-            pretokens = pretokenize_to_corpus(chunk.encode('utf-8'), self.special_tokens)
-            rv = []
+            pretokens = pretokenize(chunk.encode('utf-8'), self.special_tokens)
             for pretoken in pretokens:
+                maybe_special_token = b''.join(pretoken)
+                if maybe_special_token in self.special_tokens:
+                    yield self.reverse_vocab[maybe_special_token]
+                    continue
+
                 p = pretoken
                 merges_i = 0
                 # For each pretoken, we only need to do one pass of merges because earlier
@@ -74,4 +81,4 @@ class Tokenizer:
                     yield self.reverse_vocab[token]
 
     def decode(self, ids: list[int]) -> str:
-        return ''.join([self.vocab[id].decode('utf-8') for id in ids])
+        return b''.join([self.vocab[id] for id in ids]).decode('utf-8', errors='replace')

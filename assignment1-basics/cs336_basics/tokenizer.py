@@ -1,6 +1,6 @@
 from collections import defaultdict
 import struct
-from typing import TypedDict
+from typing import Iterator, Optional, TypedDict
 import regex as re
 
 PAT=r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""".encode('utf-8')
@@ -38,18 +38,27 @@ def merge_corpora(*corpora: Corpus) -> Corpus:
             rv[seq] += count
     return rv
 
-def pretokenize_to_corpus(text: bytes, special_tokens: list[bytes] = ["<|endoftext|>".encode('utf-8')]) -> Corpus:
-    escaped_tokens: list[bytes] = [re.escape(token) for token in special_tokens]
-    pattern: bytes = b'|'.join(escaped_tokens)
 
-    corpus: Corpus = defaultdict(int)
-    for chunk in re.splititer(pattern, text):
-        if not chunk:
+def pretokenize(text: bytes, special_tokens: Optional[list[bytes]] = None) -> Iterator[Sequence]:
+    if special_tokens:
+        pattern: bytes = b'(' + b'|'.join([re.escape(token) for token in special_tokens]) + b')'
+        splits = re.splititer(pattern, text)
+    else:
+        splits = [text]
+
+    for chunk in splits:
+        if special_tokens and chunk in special_tokens:
+            g = chunk
+            yield struct.unpack('c' * len(g), g)
             continue
         for pretoken in re.finditer(PAT, chunk):
             g = pretoken.group()
-            key = struct.unpack('c' * len(g), g)
-            corpus[key] += 1
+            yield struct.unpack('c' * len(g), g)
+
+def pretokenize_to_corpus(text: bytes, special_tokens: Optional[list[bytes]] = None) -> Corpus:
+    corpus: Corpus = defaultdict(int)
+    for pretoken in pretokenize(text, special_tokens):
+        corpus[pretoken] += 1
 
     return corpus
 

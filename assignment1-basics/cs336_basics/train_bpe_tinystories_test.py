@@ -1,9 +1,11 @@
 import pickle
 import time
+import pytest
 from tqdm import tqdm
 from .parallel_pretokenizer import parallel_pretokenize_path_to_corpus
 from .tokenizer import bpe_tokenize
 
+@pytest.mark.skip(reason="slow")
 def test_tiny_stories_training_set():
     corpus = parallel_pretokenize_path_to_corpus("./data/TinyStoriesV2-GPT4-train.txt")
     # corpus = parallel_pretokenize_path_to_corpus("./data/TinyStoriesV2-GPT4-valid.txt")
