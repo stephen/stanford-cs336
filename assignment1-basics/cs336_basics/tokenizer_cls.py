@@ -73,7 +73,5 @@ class Tokenizer:
                 for token in p:
                     yield self.reverse_vocab[token]
 
-
-
     def decode(self, ids: list[int]) -> str:
-        pass
+        return ''.join([self.vocab[id].decode('utf-8') for id in ids])

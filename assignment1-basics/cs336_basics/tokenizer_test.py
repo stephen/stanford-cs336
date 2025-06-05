@@ -44,3 +44,11 @@ def test_iterable():
 
   encoded = t.encode_iterable(input)
   assert ''.join(input) == b''.join([vocab[t] for t in encoded]).decode('utf-8')
+
+def test_decode():
+  text = b"low low low low low\nlower lower widest widest widest\nnewest newest newest newest newest newest"
+  corpus = pretokenize_to_corpus(text)
+  vocab, merges = bpe_tokenize(corpus, 6, ["<|endoftext|>"])
+
+  t = Tokenizer(vocab, merges, ["<|endoftext|>"])
+  assert t.decode([262, 261]) == "newest"
