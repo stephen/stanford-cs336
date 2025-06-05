@@ -42,37 +42,38 @@ class Tokenizer:
         return cls(v, m, special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        pretokens = pretokenize_to_corpus(text.encode('utf-8'), self.special_tokens)
-        rv = []
-        for pretoken in pretokens:
-            p = pretoken
-            merges_i = 0
-            # For each pretoken, we only need to do one pass of merges because earlier
-            # merges could not have happened after later ones.
-            while merges_i < len(self.merges):
-                i = 0
-                m = self.merges[merges_i]
+        return [id for id in self.encode_iterable([text])]
 
-                # We may need to try a given merge several times in case it recurs in the same pretoken.
-                while True:
-                    try_again = False
-                    for j, pair in enumerate(zip(p[i:], p[i+1:])):
-                        if m == pair:
-                            p = merge_at_positions(p, m, [i + j])
-                            i = j +1
-                            try_again = True
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
+        for chunk in iterable:
+            pretokens = pretokenize_to_corpus(chunk.encode('utf-8'), self.special_tokens)
+            rv = []
+            for pretoken in pretokens:
+                p = pretoken
+                merges_i = 0
+                # For each pretoken, we only need to do one pass of merges because earlier
+                # merges could not have happened after later ones.
+                while merges_i < len(self.merges):
+                    i = 0
+                    m = self.merges[merges_i]
+
+                    # We may need to try a given merge several times in case it recurs in the same pretoken.
+                    while True:
+                        try_again = False
+                        for j, pair in enumerate(zip(p[i:], p[i+1:])):
+                            if m == pair:
+                                p = merge_at_positions(p, m, [i + j])
+                                i = j +1
+                                try_again = True
+                                break
+                        if not try_again:
                             break
-                    if not try_again:
-                        break
-                merges_i += 1
+                    merges_i += 1
 
-            for token in p:
-                rv.append(self.reverse_vocab[token])
+                for token in p:
+                    yield self.reverse_vocab[token]
 
-        return rv
 
-    def encode_iterable(self, iterable: Iterable[str]) -> Iterable[str]:
-        pass
 
     def decode(self, ids: list[int]) -> str:
         pass

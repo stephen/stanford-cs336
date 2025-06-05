@@ -28,3 +28,19 @@ def test_encode_recurrence():
   encoded = t.encode("construction")
   assert len(encoded) == len("construction") - 2
   assert encoded[1] == encoded[9]
+
+def test_iterable():
+  text = b"low low low low low\nlower lower widest widest widest\nnewest newest newest newest newest newest"
+  corpus = pretokenize_to_corpus(text)
+  vocab, merges = bpe_tokenize(corpus, 6, ["<|endoftext|>"])
+
+  t = Tokenizer(vocab, merges, ["<|endoftext|>"])
+  input = ['newest', 'lowest', 'low', 'widest']
+
+  encoded = t.encode_iterable(input)
+  expected = [262, 261, 260, 258, 260, 119, 105, 100, 258]
+  for i, e in enumerate(encoded):
+    assert e == expected[i]
+
+  encoded = t.encode_iterable(input)
+  assert ''.join(input) == b''.join([vocab[t] for t in encoded]).decode('utf-8')
