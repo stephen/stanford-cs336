@@ -39,9 +39,12 @@ def merge_corpora(*corpora: Corpus) -> Corpus:
     return rv
 
 
-def pretokenize(text: bytes, special_tokens: Optional[list[bytes]] = None) -> Iterator[Sequence]:
+def pretokenize(text: bytes, special_tokens: Optional[list[bytes]] = None, training = False) -> Iterator[Sequence]:
     if special_tokens:
         pattern: bytes = b'(' + b'|'.join([re.escape(token) for token in special_tokens]) + b')'
+        if training:
+            # In training, we throw the special tokens away.
+            pattern: bytes = b'|'.join([re.escape(token) for token in special_tokens])
         splits = re.splititer(pattern, text)
     else:
         splits = [text]
@@ -57,7 +60,7 @@ def pretokenize(text: bytes, special_tokens: Optional[list[bytes]] = None) -> It
 
 def pretokenize_to_corpus(text: bytes, special_tokens: Optional[list[bytes]] = None) -> Corpus:
     corpus: Corpus = defaultdict(int)
-    for pretoken in pretokenize(text, special_tokens):
+    for pretoken in pretokenize(text, special_tokens, training=True):
         corpus[pretoken] += 1
 
     return corpus

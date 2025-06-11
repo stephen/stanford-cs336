@@ -4,7 +4,7 @@ import pickle
 import struct
 from typing import Iterable, Optional
 from cs336_basics.parallel_pretokenizer import parallel_pretokenize_path_to_corpus
-from cs336_basics.tokenizer import PAT, Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize, pretokenize_to_corpus
+from cs336_basics.tokenizer import Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize
 
 def train_tokenizer(
     input_path: str | os.PathLike,
