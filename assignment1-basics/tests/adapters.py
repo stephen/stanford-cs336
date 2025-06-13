@@ -19,6 +19,7 @@ from cs336_basics.rope import RoPE
 from cs336_basics.swiglu import SwiGLU
 from cs336_basics.tokenizer_cls import Tokenizer, train_tokenizer
 from cs336_basics.transformer_block import Transformer
+from tests.transformer import TransformerLM
 
 
 
@@ -399,7 +400,30 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_len=context_length,
+        n_layers=num_layers,
+        d_model=d_model,
+        n_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+    )
+    lm.embedding.load_state_dict({"embedding": weights["token_embeddings.weight"]})
+    for i, layer in enumerate(lm.layers):
+        layer_prefix = f"layers.{i}."
+        layer.attn.Wq.load_state_dict({"w": weights[layer_prefix + "attn.q_proj.weight"]})
+        layer.attn.Wk.load_state_dict({"w": weights[layer_prefix + "attn.k_proj.weight"]})
+        layer.attn.Wv.load_state_dict({"w": weights[layer_prefix + "attn.v_proj.weight"]})
+        layer.attn.Wo.load_state_dict({"w": weights[layer_prefix + "attn.output_proj.weight"]})
+        layer.ln1.load_state_dict({"gain": weights[layer_prefix + "ln1.weight"]})
+        layer.ln2.load_state_dict({"gain": weights[layer_prefix + "ln2.weight"]})
+        layer.ffn.w1.load_state_dict({"w": weights[layer_prefix + "ffn.w1.weight"]})
+        layer.ffn.w2.load_state_dict({"w": weights[layer_prefix + "ffn.w2.weight"]})
+        layer.ffn.w3.load_state_dict({"w": weights[layer_prefix + "ffn.w3.weight"]})
+    lm.ln.load_state_dict({"gain": weights["ln_final.weight"]})
+    lm.output.load_state_dict({"w": weights["lm_head.weight"]})
+    return lm(in_indices)
 
 
 def run_rmsnorm(
