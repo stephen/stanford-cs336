@@ -20,7 +20,7 @@ from cs336_basics.rope import RoPE
 from cs336_basics.swiglu import SwiGLU
 from cs336_basics.tokenizer_cls import Tokenizer, train_tokenizer
 from cs336_basics.transformer_block import Transformer
-from tests.transformer import TransformerLM
+from cs336_basics.transformer import TransformerLM
 
 
 

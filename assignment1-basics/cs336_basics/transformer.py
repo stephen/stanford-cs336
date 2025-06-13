@@ -27,7 +27,7 @@ class TransformerLM(t.nn.Module):
             d_model=d_model,
             d_ff=d_ff,
             n_heads=n_heads,
-            rope_max_seq_len=context_len,
+            rope_max_seq_len=context_len if rope_theta else None,
             rope_theta=rope_theta,
             device=device,
         ) for _ in range(n_layers)])
