@@ -1,3 +1,4 @@
+import itertools
 from typing import Optional
 import torch as t
 
@@ -22,18 +23,18 @@ class TransformerLM(t.nn.Module):
         ):
         super().__init__()
         self.embedding = Embedding(vocab_size, d_model, device=device)
-        self.layers = [Transformer(
+        self.layers = t.nn.ModuleList([Transformer(
             d_model=d_model,
             d_ff=d_ff,
             n_heads=n_heads,
             rope_max_seq_len=context_len,
             rope_theta=rope_theta,
             device=device,
-        ) for _ in range(n_layers)]
+        ) for _ in range(n_layers)])
 
         self.ln = RMSNorm(d_model, device=device)
         self.output = Linear(d_model, vocab_size, device=device)
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        layers = [self.embedding] + self.layers + [self.ln, self.output]
+        layers = itertools.chain([self.embedding], self.layers, [self.ln, self.output])
         return reduce(lambda x, layer: layer(x), layers, x)
