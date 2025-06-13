@@ -18,6 +18,7 @@ from cs336_basics.rmsnorm import RMSNorm
 from cs336_basics.rope import RoPE
 from cs336_basics.swiglu import SwiGLU
 from cs336_basics.tokenizer_cls import Tokenizer, train_tokenizer
+from cs336_basics.transformer_block import Transformer
 
 
 
@@ -305,7 +306,18 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    layer = Transformer(d_model, num_heads, d_ff, theta, max_seq_len)
+    layer.attn.Wq.load_state_dict({"w": weights["attn.q_proj.weight"]})
+    layer.attn.Wk.load_state_dict({"w": weights["attn.k_proj.weight"]})
+    layer.attn.Wv.load_state_dict({"w": weights["attn.v_proj.weight"]})
+    layer.attn.Wo.load_state_dict({"w": weights["attn.output_proj.weight"]})
+    layer.ln1.load_state_dict({"gain": weights["ln1.weight"]})
+    layer.ln2.load_state_dict({"gain": weights["ln2.weight"]})
+    layer.ffn.w1.load_state_dict({"w": weights["ffn.w1.weight"]})
+    layer.ffn.w2.load_state_dict({"w": weights["ffn.w2.weight"]})
+    layer.ffn.w3.load_state_dict({"w": weights["ffn.w3.weight"]})
+
+    return layer(in_features)
 
 
 def run_transformer_lm(
