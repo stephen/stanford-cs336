@@ -8,6 +8,7 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
+import torchinfo
 
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
