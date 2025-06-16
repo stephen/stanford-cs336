@@ -12,6 +12,7 @@ import torchinfo
 
 from cs336_basics.adamw import AdamW
 from cs336_basics.cross_entropy_loss import cross_entropy
+from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
 from cs336_basics.softmax import softmax
@@ -567,7 +568,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return lr_cosine_schedule(it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
 
 
 def run_save_checkpoint(
