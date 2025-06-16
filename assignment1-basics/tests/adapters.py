@@ -24,6 +24,7 @@ from cs336_basics.swiglu import SwiGLU
 from cs336_basics.tokenizer_cls import Tokenizer, train_tokenizer
 from cs336_basics.transformer_block import Transformer
 from cs336_basics.transformer import TransformerLM
+from tests.gradient_clipping import clip_gradients
 
 
 
@@ -533,7 +534,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return clip_gradients(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> type[torch.optim.Optimizer]:
