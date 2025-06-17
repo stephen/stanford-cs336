@@ -12,6 +12,7 @@ import torchinfo
 
 from cs336_basics.adamw import AdamW
 from cs336_basics.cross_entropy_loss import cross_entropy
+from cs336_basics.dataloader import get_batch
 from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.multihead_self_attention import MultiHeadSelfAttention
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
@@ -490,7 +491,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(dataset, batch_size, context_length, torch.device(device))
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
