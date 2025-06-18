@@ -1,4 +1,3 @@
-from datetime import datetime
 from tqdm import tqdm
 import argparse
 import pathlib
@@ -16,6 +15,7 @@ from cs336_basics.dataloader import get_batch
 from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
+from cs336_basics.gradient_clipping import clip_gradients
 
 default_device = t.device('mps:0') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
 default_backend = "aot_eager" if default_device.type == "mps" else "inductor"
@@ -54,7 +54,9 @@ class TrainingArgs:
 
     steps: int = 5000
     batch_size: int = 32
+
     optimizer_args: OptimizerArgs = field(default_factory=OptimizerArgs)
+    clip_gradient_to_max_norm: Optional[float] = 1.0
 
     wandb_group_name: Optional[str] = None
     wandb_run_name: Optional[str] = None
@@ -107,6 +109,13 @@ class Trainer:
         output = self.model(x)
         loss = cross_entropy(output, label)
         loss.backward()
+
+        if self.args.clip_gradient_to_max_norm is not None:
+            clip_gradients(
+                self.model.parameters(),
+                self.args.clip_gradient_to_max_norm,
+            )
+
         self.optimizer.step()
         self.optimizer.zero_grad()
         return loss
