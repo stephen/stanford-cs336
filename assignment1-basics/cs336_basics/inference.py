@@ -1,3 +1,4 @@
+from networkx import general_random_intersection_graph
 from tqdm import tqdm
 import argparse
 import pathlib
@@ -23,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default="./data/model.pth", help='Which file to use as the model weights')
     parser.add_argument('--tokenizer-state', type=str, default=None, help='Which files to use as the tokenizer serialized state')
+    parser.add_argument('--max-tokens', type=int, default=256, help='Max tokens to generate for a response')
     cli_args = parser.parse_args()
 
     assert cli_args.model, "--model must be specified"
@@ -42,6 +44,7 @@ def main():
     with open(cli_args.model, "rb") as f:
         t.load(f, model.state_dict())
 
+    max_tokens = cli_args.max_tokens
     tokenizer = Tokenizer.from_file(cli_args.tokenizer_state)
 
     eot_encode = tokenizer.encode("<|endoftext|>")
@@ -54,24 +57,33 @@ def main():
             if not line:
                 continue
 
+            generated = 0
             encoded = t.tensor(tokenizer.encode(line)).unsqueeze(0)
             while True:
                 logits = model(encoded)
                 output = softmax(logits, dim=-1)
                 token_id = t.argmax(output, dim=-1)[0][-1].long().item()
                 next = tokenizer.decode([int(token_id)])
+
                 if next == eot:
                     break
 
                 encoded = t.concat([encoded, t.tensor([token_id]).unsqueeze(0)], dim=-1)
-                if encoded.shape[-1] > model_args.context_len:
-                    encoded = encoded[..., -model_args.context_len]
 
+                if encoded.shape[-1] > model_args.context_len:
+                    encoded = encoded[..., -model_args.context_len:]
+
+                generated += 1
                 print(next, end="", flush=True)
+
+                if generated >= max_tokens:
+                    break
 
         except (KeyboardInterrupt, EOFError):
             print("\nExiting...")
-        break
+            break
+
+        print("")
 
 if __name__ == "__main__":
     main()
