@@ -22,6 +22,7 @@ class TransformerLM(t.nn.Module):
             device: Optional[t.device] = None
         ):
         super().__init__()
+        self.context_len = context_len
         self.embedding = Embedding(vocab_size, d_model, device=device)
         self.layers = t.nn.ModuleList([Transformer(
             d_model=d_model,
@@ -36,5 +37,6 @@ class TransformerLM(t.nn.Module):
         self.output = Linear(d_model, vocab_size, device=device)
 
     def forward(self, x: t.Tensor) -> t.Tensor:
+        assert x.shape[-1] <= self.context_len, f"context_len cannot exceed max {self.context_len}, got {x.shape[-1]}"
         layers = itertools.chain([self.embedding], self.layers, [self.ln, self.output])
         return reduce(lambda x, layer: layer(x), layers, x)

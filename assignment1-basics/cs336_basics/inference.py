@@ -62,7 +62,11 @@ def main():
                 next = tokenizer.decode([int(token_id)])
                 if next == eot:
                     break
+
                 encoded = t.concat([encoded, t.tensor([token_id]).unsqueeze(0)], dim=-1)
+                if encoded.shape[-1] > model_args.context_len:
+                    encoded = encoded[..., -model_args.context_len]
+
                 print(next, end="", flush=True)
 
         except (KeyboardInterrupt, EOFError):
