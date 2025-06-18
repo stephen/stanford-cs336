@@ -13,7 +13,7 @@ from cs336_basics.checkpointing import save_checkpoint
 from cs336_basics.cross_entropy_loss import cross_entropy
 from cs336_basics.dataloader import get_batch
 from cs336_basics.tokenizer_cls import Tokenizer
-from cs336_basics.train_model import ModelArgs
+from cs336_basics.trainer import ModelArgs
 from cs336_basics.transformer import TransformerLM
 
 import readline
