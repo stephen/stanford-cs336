@@ -1,10 +1,13 @@
+from datetime import datetime
 from tqdm import tqdm
 import argparse
 import pathlib
 import numpy as np
 import torch as t
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
+
+import wandb
 
 from cs336_basics.adamw import AdamW
 from cs336_basics.checkpointing import save_checkpoint
@@ -43,7 +46,7 @@ class TrainingArgs:
     tokenizer_state_file: Optional[pathlib.Path] = None
 
     steps: int = 10_000
-    validation_step_interval: int = 1000
+    validation_step_interval: int = 100
     checkpoint_step_interval: int = 1000
 
     model_args: ModelArgs = field(default_factory=ModelArgs)
@@ -81,6 +84,13 @@ class Trainer:
 
         self.training_set = np.load(self.args.training_set_file, mmap_mode='r')
         self.validation_set = np.load(self.args.validation_set_file, mmap_mode='r')
+        wandb.init(
+            project="cs336-llm",
+            config=asdict(self.args),
+            group=self.args.wandb_group_name,
+            name=self.args.wandb_run_name,
+        )
+        wandb.watch(self.model, log="gradients")
 
     def teardown(self):
         # XXX: do we need to un-memmap?
@@ -107,12 +117,14 @@ class Trainer:
 
     def train(self):
         iter = tqdm(range(self.args.steps))
+        test_loss = self.evaluate()
         valid_loss = t.tensor(float('inf'))
+        wandb.log({"test_loss": test_loss, "valid_loss": valid_loss}, step=0)
 
         for step in iter:
             self.model.train()
             x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
-            loss = self.training_step(x, label)
+            test_loss = self.training_step(x, label)
 
             if step % self.args.checkpoint_step_interval == 0:
                 save_checkpoint(self.model, self.optimizer, step, f"./data/model-checkpoint-{step}.pth")
@@ -122,13 +134,19 @@ class Trainer:
                 iter.set_postfix({})
 
             iter.set_postfix({
-                "train_loss": f"{loss.cpu().item():.2f}",
+                "train_loss": f"{test_loss.cpu().item():.2f}",
                 "valid_loss": f"{valid_loss.cpu().item():.2f}"
             })
+            wandb.log({"test_loss": test_loss, "valid_loss": valid_loss}, step=step)
 
         path = f"./data/model.pth"
         t.save(self.model.state_dict(), path)
         print(f"saved to {path=}")
+
+        artifact = wandb.Artifact(path, type="model")
+        artifact.add_file(path)
+        wandb.log_artifact(artifact)
+        wandb.finish()
 
     def __enter__(self):
         self.setup()
