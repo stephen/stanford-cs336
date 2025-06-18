@@ -13,6 +13,7 @@ from cs336_basics.adamw import AdamW
 from cs336_basics.checkpointing import save_checkpoint
 from cs336_basics.cross_entropy_loss import cross_entropy
 from cs336_basics.dataloader import get_batch
+from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 
@@ -34,10 +35,10 @@ class OptimizerArgs:
     weight_decay: float = 0.01
     betas: tuple[float, float] = (.9, .999)
 
-    max_learning_rate: float = 1e-4
-    min_learning_rate: float = 1e-4/10
-    warmup_iters: int = 1000
-    cosine_cycle_iters: int = 10000
+    max_learning_rate: float = 3e-4
+    min_learning_rate: float =   1e-5
+    warmup_iters: int = 500
+    cosine_cycle_iters: int = 4000
 
 @dataclass
 class TrainingArgs:
@@ -46,12 +47,12 @@ class TrainingArgs:
 
     tokenizer_state_file: Optional[pathlib.Path] = None
 
-    steps: int = 5000
     validation_step_interval: int = 100
     checkpoint_step_interval: int = 1000
 
     model_args: ModelArgs = field(default_factory=ModelArgs)
 
+    steps: int = 5000
     batch_size: int = 32
     optimizer_args: OptimizerArgs = field(default_factory=OptimizerArgs)
 
@@ -83,7 +84,6 @@ class Trainer:
         self.model.compile(backend=default_backend)
 
         self.optimizer = AdamW(self.model.parameters(), lr=self.args.optimizer_args.max_learning_rate)
-        # XXX: schedule lr?
 
         self.training_set = np.load(self.args.training_set_file, mmap_mode='r')
         self.validation_set = np.load(self.args.validation_set_file, mmap_mode='r')
@@ -118,6 +118,15 @@ class Trainer:
         loss = cross_entropy(output, label)
         return loss
 
+    def lr_for_step(self, step: int):
+        return lr_cosine_schedule(
+            step,
+            self.args.optimizer_args.max_learning_rate,
+            self.args.optimizer_args.min_learning_rate,
+            self.args.optimizer_args.warmup_iters,
+            self.args.optimizer_args.cosine_cycle_iters
+        )
+
     def train(self):
         iter = tqdm(range(self.args.steps))
         test_loss = self.evaluate()
@@ -126,6 +135,11 @@ class Trainer:
 
         for step in iter:
             self.model.train()
+
+            lr = self.lr_for_step(step)
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = lr
+
             x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
             test_loss = self.training_step(x, label)
 
@@ -140,7 +154,7 @@ class Trainer:
                 "train_loss": f"{test_loss.cpu().item():.2f}",
                 "valid_loss": f"{valid_loss.cpu().item():.2f}"
             })
-            wandb.log({"test_loss": test_loss, "valid_loss": valid_loss}, step=step)
+            wandb.log({"test_loss": test_loss, "valid_loss": valid_loss, "lr": lr}, step=step)
 
         path = f"./data/model.pth"
         t.save(self.model.state_dict(), path)
