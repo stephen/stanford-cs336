@@ -103,7 +103,6 @@ class Trainer:
         wandb.watch(self.model, log="gradients", log_freq=10)
 
     def teardown(self):
-        # XXX: do we need to un-memmap?
         del self.tokenizer
         del self.training_set
         del self.validation_set
