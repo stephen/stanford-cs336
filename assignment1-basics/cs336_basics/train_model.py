@@ -1,5 +1,5 @@
+import simple_parsing
 from tqdm import tqdm
-import argparse
 import pathlib
 import numpy as np
 import torch as t
@@ -42,10 +42,10 @@ class OptimizerArgs:
 
 @dataclass
 class TrainingArgs:
-    training_set_file: pathlib.Path
-    validation_set_file: pathlib.Path
+    training_set: pathlib.Path
+    validation_set: pathlib.Path
 
-    tokenizer_state_file: Optional[pathlib.Path] = None
+    tokenizer_state: pathlib.Path
 
     validation_step_interval: int = 100
     checkpoint_step_interval: int = 1000
@@ -71,7 +71,7 @@ class Trainer:
     def setup(self):
         args = self.args
 
-        self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state_file))
+        self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
         self.model = TransformerLM(
             context_len=args.model_args.context_len,
@@ -85,10 +85,15 @@ class Trainer:
         )
         self.model.compile(backend=default_backend)
 
-        self.optimizer = AdamW(self.model.parameters(), lr=self.args.optimizer_args.max_learning_rate)
+        self.optimizer = AdamW(
+            self.model.parameters(),
+            lr=self.args.optimizer_args.max_learning_rate,
+            weight_decay=self.args.optimizer_args.weight_decay,
+            betas=self.args.optimizer_args.betas,
+        )
 
-        self.training_set = np.load(self.args.training_set_file, mmap_mode='r')
-        self.validation_set = np.load(self.args.validation_set_file, mmap_mode='r')
+        self.training_set = np.load(self.args.training_set, mmap_mode='r')
+        self.validation_set = np.load(self.args.validation_set, mmap_mode='r')
         wandb.init(
             project="cs336-llm",
             config=asdict(self.args),
@@ -190,23 +195,12 @@ class Trainer:
         return False
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--training-set', type=str, default=None, help='Which file to use as the training set')
-    parser.add_argument('--validation-set', type=str, default=None, help='Which file to use as the validation set')
-    parser.add_argument('--tokenizer-state', type=str, default=None, help='Which files to use as the tokenizer serialized state')
+    parser = simple_parsing.ArgumentParser()
+    parser.add_arguments(TrainingArgs, dest="parsed")
     cli_args = parser.parse_args()
 
-    assert cli_args.training_set, "--training-set must be specified"
-    assert cli_args.validation_set, "--validation-set must be specified"
-    assert cli_args.tokenizer_state, "--tokenizer-state must be specified"
 
-    args = TrainingArgs(
-        training_set_file=pathlib.Path(cli_args.training_set),
-        validation_set_file=pathlib.Path(cli_args.validation_set),
-        tokenizer_state_file=pathlib.Path(cli_args.tokenizer_state),
-    )
-
-    with Trainer(args) as t:
+    with Trainer(cli_args.parsed) as t:
         t.train()
 
 if __name__ == "__main__":
