@@ -46,13 +46,13 @@ class TrainingArgs:
 
     tokenizer_state_file: Optional[pathlib.Path] = None
 
-    steps: int = 10_000
+    steps: int = 5000
     validation_step_interval: int = 100
     checkpoint_step_interval: int = 1000
 
     model_args: ModelArgs = field(default_factory=ModelArgs)
 
-    batch_size: int = 64
+    batch_size: int = 32
     optimizer_args: OptimizerArgs = field(default_factory=OptimizerArgs)
 
     wandb_group_name: Optional[str] = None
