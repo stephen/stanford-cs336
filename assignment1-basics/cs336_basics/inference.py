@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--model', type=str, default="./data/model.pth", help='Which file to use as the model weights')
     parser.add_argument('--tokenizer-state', type=str, default=None, help='Which files to use as the tokenizer serialized state')
     parser.add_argument('--max-tokens', type=int, default=256, help='Max tokens to generate for a response')
+    parser.add_argument('--temperature', type=int, default=0, help='Softmax temperature when sampling outputs, or argmax if 0')
     cli_args = parser.parse_args()
 
     assert cli_args.model, "--model must be specified"
@@ -45,6 +46,8 @@ def main():
         t.load(f, model.state_dict())
 
     max_tokens = cli_args.max_tokens
+    temperature = cli_args.temperature
+
     tokenizer = Tokenizer.from_file(cli_args.tokenizer_state)
 
     eot_encode = tokenizer.encode("<|endoftext|>")
@@ -61,12 +64,18 @@ def main():
             encoded = t.tensor(tokenizer.encode(line)).unsqueeze(0)
             while True:
                 logits = model(encoded)
-                output = softmax(logits, dim=-1)
-                token_id = t.argmax(output, dim=-1)[0][-1].long().item()
-                next = tokenizer.decode([int(token_id)])
+                if temperature == 0:
+                    token_id = t.argmax(logits[0][-1], dim=-1, keepdim=True).item()
+                else:
+                    logits /= temperature
+                    output = softmax(logits, dim=-1)
+                    token_id = t.multinomial(output[0][-1], 1).long().item()
 
+                next = tokenizer.decode([int(token_id)])
                 if next == eot:
                     break
+
+                print(next, end="", flush=True)
 
                 encoded = t.concat([encoded, t.tensor([token_id]).unsqueeze(0)], dim=-1)
 
@@ -74,7 +83,6 @@ def main():
                     encoded = encoded[..., -model_args.context_len:]
 
                 generated += 1
-                print(next, end="", flush=True)
 
                 if generated >= max_tokens:
                     break
