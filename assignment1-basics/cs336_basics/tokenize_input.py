@@ -1,7 +1,6 @@
 from tqdm import tqdm
 import argparse
 import pathlib
-import pickle
 import numpy as np
 
 from cs336_basics.tokenizer_cls import Tokenizer
@@ -40,11 +39,9 @@ def main():
         tokens = t.encode_iterable(f)
         output = list(tqdm(tokens))
 
-    outpath = path.with_suffix(".tokenized_pkl")
+    outpath = path.with_suffix(".npy")
     with open(outpath, "wb") as f:
-        pickle.dump({
-            "tokens": np.array(output, dtype=np.uint16),
-        }, f)
+        np.save(f, np.array(output, dtype=np.uint16))
     print(f"tokenized text saved to: {outpath}")
 
 if __name__ == "__main__":
