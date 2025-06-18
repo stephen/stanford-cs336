@@ -16,7 +16,8 @@ from cs336_basics.dataloader import get_batch
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 
-default_device = t.device('mps') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
+default_device = t.device('mps:0') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
+default_backend = "aot_eager" if default_device.type == "mps" else "inductor"
 
 @dataclass
 class ModelArgs:
@@ -79,6 +80,8 @@ class Trainer:
             vocab_size=args.model_args.vocab_size,
             device=args.device,
         )
+        self.model.compile(backend=default_backend)
+
         self.optimizer = AdamW(self.model.parameters(), lr=self.args.optimizer_args.max_learning_rate)
         # XXX: schedule lr?
 
