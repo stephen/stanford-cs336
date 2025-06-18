@@ -125,7 +125,9 @@ class Trainer:
         x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
         output = self.model(x)
         loss = cross_entropy(output, label)
-        return loss
+        perplexity = loss.exp()
+
+        return loss, perplexity
 
     def lr_for_step(self, step: int):
         return lr_cosine_schedule(
@@ -138,9 +140,8 @@ class Trainer:
 
     def train(self):
         iter = tqdm(range(self.args.steps))
-        test_loss = self.evaluate()
-        valid_loss = t.tensor(float('inf'))
-        wandb.log({"test_loss": test_loss, "valid_loss": valid_loss}, step=0)
+        valid_loss, valid_perplexity = self.evaluate()
+        wandb.log({"valid_loss": valid_loss, "valid_perplexity": valid_perplexity}, step=0)
 
         for step in iter:
             self.model.train()
@@ -156,14 +157,20 @@ class Trainer:
                 save_checkpoint(self.model, self.optimizer, step, f"./data/model-checkpoint-{step}.pth")
 
             if step % self.args.validation_step_interval == 0:
-                valid_loss = self.evaluate()
+                valid_loss, valid_perplexity = self.evaluate()
                 iter.set_postfix({})
 
             iter.set_postfix({
                 "train_loss": f"{test_loss.cpu().item():.2f}",
-                "valid_loss": f"{valid_loss.cpu().item():.2f}"
+                "valid_loss": f"{valid_loss.cpu().item():.2f}",
+                "valid_perplexity": f"{valid_perplexity.cpu().item():.2f}",
             })
-            wandb.log({"test_loss": test_loss, "valid_loss": valid_loss, "lr": lr}, step=step)
+            wandb.log({
+                "test_loss": test_loss,
+                "valid_loss": valid_loss,
+                "valid_perplexity": valid_perplexity,
+                "lr": lr,
+            }, step=step)
 
         path = f"./data/model.pth"
         t.save(self.model.state_dict(), path)
