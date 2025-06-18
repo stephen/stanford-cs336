@@ -29,6 +29,27 @@ class Tokenizer:
         self.reverse_vocab = {seq: id for id, seq in self.vocab.items()}
         self.merges = merges
         self.special_tokens = sorted([t.encode('utf-8') for t in (special_tokens or [])], reverse=True)
+        self.merge_lookup = {merge: i for i, merge in enumerate(self.merges)}
+
+    @classmethod
+    def from_file(
+        cls,
+        filepath: str | os.PathLike,
+    ):
+        with open(filepath, "rb") as f:
+            d = pickle.load(f)
+            return cls(d["vocab"], d["merges"], d["special_tokens"])
+
+    def to_file(
+        self,
+        filepath: str | os.PathLike,
+    ):
+        with open(filepath, "wb") as f:
+            pickle.dump({
+                "vocab": self.vocab,
+                "merges": self.merges,
+                "special_tokens": [t.decode('utf-8') for t in self.special_tokens],
+            }, f)
 
     @classmethod
     def from_files(
@@ -43,9 +64,18 @@ class Tokenizer:
             m = pickle.load(f)
         return cls(v, m, special_tokens)
 
+    def to_files(
+        self,
+        vocab_filepath: str | os.PathLike,
+        merges_filepath: str | os.PathLike,
+    ):
+        with open(vocab_filepath, "wb") as f:
+            pickle.dump(self.vocab, f)
+        with open(merges_filepath, "wb") as f:
+            pickle.dump(self.merges, f)
+
     def encode(self, text: str) -> list[int]:
         return [id for id in self.encode_iterable([text])]
-
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
         for chunk in iterable:
