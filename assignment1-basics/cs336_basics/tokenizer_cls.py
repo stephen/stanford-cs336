@@ -2,9 +2,9 @@ import regex as re
 import os
 import pickle
 import struct
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 from cs336_basics.parallel_pretokenizer import parallel_pretokenize_path_to_corpus
-from cs336_basics.tokenizer import Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize
+from cs336_basics.tokenizer import Token, Vocab, bpe_tokenize, Merges, merge_at_positions, pretokenize
 
 def train_tokenizer(
     input_path: str | os.PathLike,
@@ -78,6 +78,7 @@ class Tokenizer:
         return [id for id in self.encode_iterable([text])]
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterable[int]:
+        pretoken_cache: dict[Sequence, Sequence] = {}
         for chunk in iterable:
             pretokens = pretokenize(chunk.encode('utf-8'), self.special_tokens)
             for pretoken in pretokens:
@@ -87,6 +88,11 @@ class Tokenizer:
                     continue
 
                 p = pretoken
+
+                if p in pretoken_cache:
+                    for token in pretoken_cache[p]:
+                        yield self.reverse_vocab[token]
+                    continue
 
                 while True:
                     # Locate the next best merge, defined as being the earliest merge
@@ -104,6 +110,7 @@ class Tokenizer:
                     else:
                         break
 
+                pretoken_cache[pretoken] = p
                 for token in p:
                     yield self.reverse_vocab[token]
 
