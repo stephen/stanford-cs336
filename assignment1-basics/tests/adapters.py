@@ -8,7 +8,6 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
-import torchinfo
 
 from cs336_basics.adamw import AdamW
 from cs336_basics.checkpointing import load_checkpoint, save_checkpoint
@@ -26,7 +25,7 @@ from cs336_basics.swiglu import SwiGLU, silu
 from cs336_basics.tokenizer_cls import Tokenizer, train_tokenizer
 from cs336_basics.transformer_block import Transformer
 from cs336_basics.transformer import TransformerLM
-from tests.gradient_clipping import clip_gradients
+from cs336_basics.gradient_clipping import clip_gradients
 
 
 
