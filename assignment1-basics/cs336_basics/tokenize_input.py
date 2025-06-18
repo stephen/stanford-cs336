@@ -1,3 +1,4 @@
+from tqdm import tqdm
 import argparse
 import pathlib
 import pickle
@@ -37,7 +38,6 @@ def main():
     output: list[int]
     with open(path, "r") as f:
         tokens = t.encode_iterable(f)
-        from tqdm import tqdm # XXX: not clear why this needs to be here, but otherwise we get circular import problems.
         output = list(tqdm(tokens))
 
     outpath = path.with_suffix(".tokenized_pkl")
