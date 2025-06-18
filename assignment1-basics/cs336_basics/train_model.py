@@ -43,6 +43,9 @@ class TrainingArgs:
     tokenizer_state_file: Optional[pathlib.Path] = None
 
     steps: int = 10_000
+    validation_step_interval: int = 1000
+    checkpoint_step_interval: int = 1000
+
     model_args: ModelArgs = field(default_factory=ModelArgs)
 
     batch_size: int = 64
@@ -95,14 +98,33 @@ class Trainer:
         self.optimizer.zero_grad()
         return loss
 
+    def evaluate(self):
+        self.model.eval()
+        x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+        output = self.model(x)
+        loss = cross_entropy(output, label)
+        return loss
+
     def train(self):
-        for step in tqdm(range(self.args.steps)):
+        iter = tqdm(range(self.args.steps))
+        valid_loss = t.tensor(float('inf'))
+
+        for step in iter:
+            self.model.train()
             x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
             loss = self.training_step(x, label)
-            if step % 1000 == 0:
+
+            if step % self.args.checkpoint_step_interval == 0:
                 save_checkpoint(self.model, self.optimizer, step, f"./data/model-checkpoint-{step}.pth")
-            if step % 100 == 0:
-                print(f"step: {step} loss: {loss.cpu().item():.2f}")
+
+            if step % self.args.validation_step_interval == 0:
+                valid_loss = self.evaluate()
+                iter.set_postfix({})
+
+            iter.set_postfix({
+                "train_loss": f"{loss.cpu().item():.2f}",
+                "valid_loss": f"{valid_loss.cpu().item():.2f}"
+            })
 
         path = f"./data/model.pth"
         t.save(self.model.state_dict(), path)
