@@ -23,7 +23,7 @@ class MultiHeadSelfAttention(t.nn.Module):
 
         assert ((rope_theta is None) == (rope_max_seq_length is None)), "rope_theta and rope_max_seq_length must both be specified or not"
         if rope_theta is not None and rope_max_seq_length is not None:
-            self.rope = RoPE(rope_theta, self.d_h, rope_max_seq_length)
+            self.rope = RoPE(rope_theta, self.d_h, rope_max_seq_length, device=device)
         else:
             self.rope = None
 
