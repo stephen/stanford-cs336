@@ -47,9 +47,10 @@ class TrainingArgs:
 
     tokenizer_state: pathlib.Path
 
-    validation_step_interval: int = 100
-    checkpoint_step_interval: int = 1000
+    validation_step_interval: Optional[int] = 100
+    checkpoint_step_interval: Optional[int] = 1000
 
+    compile: bool = True
     model_args: ModelArgs = field(default_factory=ModelArgs)
 
     steps: int = 5000
@@ -83,7 +84,9 @@ class Trainer:
             vocab_size=args.model_args.vocab_size,
             device=args.device,
         )
-        self.model.compile(backend=default_backend)
+
+        if self.args.compile:
+            self.model.compile(backend=default_backend)
 
         self.optimizer = AdamW(
             self.model.parameters(),
@@ -157,10 +160,10 @@ class Trainer:
             x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
             test_loss = self.training_step(x, label)
 
-            if step % self.args.checkpoint_step_interval == 0:
+            if self.args.checkpoint_step_interval is not None and step % self.args.checkpoint_step_interval == 0:
                 save_checkpoint(self.model, self.optimizer, step, f"./data/model-checkpoint-{step}.pth")
 
-            if step % self.args.validation_step_interval == 0:
+            if self.args.validation_step_interval is not None and step % self.args.validation_step_interval == 0:
                 valid_loss, valid_perplexity = self.evaluate()
                 iter.set_postfix({})
 
@@ -180,7 +183,7 @@ class Trainer:
         t.save(self.model.state_dict(), path)
         print(f"saved to {path=}")
 
-        artifact = wandb.Artifact(path, type="model")
+        artifact = wandb.Artifact(pathlib.Path(path).name, type="model")
         artifact.add_file(path)
         wandb.log_artifact(artifact)
         wandb.finish()
