@@ -95,7 +95,7 @@ class Trainer:
             group=self.args.wandb_group_name,
             name=self.args.wandb_run_name,
         )
-        wandb.watch(self.model, log="gradients")
+        wandb.watch(self.model, log="gradients", log_freq=10)
 
     def teardown(self):
         # XXX: do we need to un-memmap?
