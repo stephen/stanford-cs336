@@ -87,25 +87,22 @@ class Tokenizer:
                     continue
 
                 p = pretoken
-                merges_i = 0
-                # For each pretoken, we only need to do one pass of merges because earlier
-                # merges could not have happened after later ones.
-                while merges_i < len(self.merges):
-                    i = 0
-                    m = self.merges[merges_i]
 
-                    # We may need to try a given merge several times in case it recurs in the same pretoken.
-                    while True:
-                        try_again = False
-                        for j, pair in enumerate(zip(p[i:], p[i+1:])):
-                            if m == pair:
-                                p = merge_at_positions(p, m, [i + j])
-                                i = j +1
-                                try_again = True
-                                break
-                        if not try_again:
-                            break
-                    merges_i += 1
+                while True:
+                    # Locate the next best merge, defined as being the earliest merge
+                    # in our merges index.
+                    earliest_merge: Optional[tuple[int, int]] = None # tuple of pretoken index and merge index
+                    for i, pair in enumerate(zip(p, p[1:])):
+                        merge_i = self.merge_lookup.get(pair, -1)
+                        if merge_i != -1 and (not earliest_merge or merge_i < earliest_merge[1]):
+                            earliest_merge = (i, merge_i)
+
+                    if earliest_merge is not None:
+                        i, _ = earliest_merge
+                        pair = (p[i], p[i+1])
+                        p = merge_at_positions(p, pair, [i])
+                    else:
+                        break
 
                 for token in p:
                     yield self.reverse_vocab[token]
