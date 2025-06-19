@@ -21,13 +21,14 @@ def main():
         corpus = parallel_pretokenize_path_to_corpus(path)
 
         special_tokens = ["<|endoftext|>"]
-        vocab, merges = bpe_tokenize(corpus, cli_args.vocab_size, special_tokens)
+        vocab, merges = bpe_tokenize(corpus, cli_args.vocab_size - 256 - len(special_tokens), special_tokens)
 
         t = Tokenizer(vocab, merges, special_tokens)
 
         outpath = path.with_suffix(".tokenizer_pkl")
         t.to_file(outpath)
         print(f"tokenizer state saved to: {outpath}")
+        print(f"{len(vocab)=}, {len(merges)=}, {len(special_tokens)=}")
     else:
         state_path = cli_args.tokenizer_state
         t = Tokenizer.from_file(state_path)
