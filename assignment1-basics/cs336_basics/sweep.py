@@ -9,13 +9,10 @@ sweep_configuration = {
     "metric": {"goal": "minimize", "name": "valid_loss"},
     "parameters": {
         "learning_rate": {"min": 1e-5, "max": 1e-3},
-        "learning_rate_warmup": {"min": 0, "max": 2000},
-        "learning_rate_cosine": {"min": 0, "max": 4000},
-        "batch_size": {"values": [16, 32, 64, 128]},
-        "weight_decay": {"min": 0, "max": 1},
-        "beta1": {"min": .9, "max": .99},
-        "beta2": {"min": .95, "max": .999},
-        "clip_gradient_to_max_norm": {"min": 0.5, "max": 1.5}
+        "learning_rate_warmup": {"min": 0, "max": 1000},
+        # "batch_size": {"values": [16, 32, 64, 128]},
+        "weight_decay": {"min": 0.001, "max": 0.1},
+        # "clip_gradient_to_max_norm": {"min": 0.5, "max": 1.5}
     },
 }
 
@@ -36,12 +33,11 @@ def train():
 
     args.optimizer_args.max_learning_rate = wandb.config["learning_rate"]
     args.optimizer_args.min_learning_rate = args.optimizer_args.max_learning_rate / 10
-    args.optimizer_args.cosine_cycle_iters = wandb.config["learning_rate_cosine"]
     args.optimizer_args.warmup_iters = wandb.config["learning_rate_warmup"]
-    args.batch_size = wandb.config["batch_size"]
+    args.optimizer_args.cosine_cycle_iters = max(args.steps - args.optimizer_args.warmup_iters, 0)
     args.optimizer_args.weight_decay = wandb.config["weight_decay"]
-    args.optimizer_args.betas = (wandb.config["beta1"], wandb.config["beta2"])
-    args.clip_gradient_to_max_norm = wandb.config["clip_gradient_to_max_norm"]
+    # args.batch_size = wandb.config["batch_size"]
+    # args.clip_gradient_to_max_norm = wandb.config["clip_gradient_to_max_norm"]
 
     with Trainer(args) as t:
         t.train()
