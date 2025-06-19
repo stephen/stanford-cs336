@@ -1,22 +1,10 @@
-from networkx import general_random_intersection_graph
-from tqdm import tqdm
 import argparse
-import pathlib
-import numpy as np
 import torch as t
-from dataclasses import dataclass, field
-from typing import Optional
 
 from cs336_basics.softmax import softmax
-from cs336_basics.adamw import AdamW
-from cs336_basics.checkpointing import save_checkpoint
-from cs336_basics.cross_entropy_loss import cross_entropy
-from cs336_basics.dataloader import get_batch
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.trainer import ModelArgs
 from cs336_basics.transformer import TransformerLM
-
-import readline
 
 default_device = t.device('mps') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
 
@@ -25,11 +13,12 @@ def main():
     parser.add_argument('--model', type=str, default="./data/model.pth", help='Which file to use as the model weights')
     parser.add_argument('--tokenizer-state', type=str, default=None, help='Which files to use as the tokenizer serialized state')
     parser.add_argument('--max-tokens', type=int, default=256, help='Max tokens to generate for a response')
-    parser.add_argument('--temperature', type=int, default=0, help='Softmax temperature when sampling outputs, or argmax if 0')
+    parser.add_argument('--temperature', type=float, default=0, help='Softmax temperature when sampling outputs, or argmax if 0. Try 0.95 to start.')
+    parser.add_argument('--top-p', type=float, default=1, help='P value for top-p (nucleus) sampling. Try 0.8 to start.')
     cli_args = parser.parse_args()
 
     assert cli_args.model, "--model must be specified"
-    assert cli_args.tokenizer_state, "--model must be specified"
+    assert cli_args.tokenizer_state, "--tokenizer-state must be specified"
 
     model_args = ModelArgs()
     model = TransformerLM(
@@ -47,6 +36,7 @@ def main():
 
     max_tokens = cli_args.max_tokens
     temperature = cli_args.temperature
+    top_p = cli_args.top_p
 
     tokenizer = Tokenizer.from_file(cli_args.tokenizer_state)
 
@@ -65,17 +55,29 @@ def main():
             while True:
                 logits = model(encoded)
                 if temperature == 0:
-                    token_id = t.argmax(logits[0][-1], dim=-1, keepdim=True).item()
+                    q = softmax(logits[-1][-1], dim=-1)
+                    token_id = t.argmax(q, dim=-1, keepdim=True).item()
                 else:
-                    logits /= temperature
-                    output = softmax(logits, dim=-1)
-                    token_id = t.multinomial(output[0][-1], 1).long().item()
+                    last_logits = logits[-1][-1] / temperature
+                    q = softmax(last_logits, dim=-1)
+                    token_id = t.multinomial(q, 1).long().item()
 
-                next = tokenizer.decode([int(token_id)])
-                if next == eot:
+                if top_p != 1:
+                    # {v: i for i, v in sorted(enumerate(q.tolist()), key=lambda x: x[1])}
+                    sorted_probs, sorted_indices = t.sort(q, descending=True)
+                    cumsum = t.cumsum(sorted_probs, dim=-1)
+                    cutoff = t.searchsorted(cumsum, top_p, right=True) + 1
+
+                    sorted_probs[cutoff] = 0
+                    q = t.zeros_like(q).scatter_(0, sorted_indices, sorted_probs)
+                    q = q / q.sum()
+                    token_id = t.multinomial(q, 1).long().item()
+
+                if token_id == eot:
                     break
 
-                print(next, end="", flush=True)
+                token = tokenizer.decode([int(token_id)])
+                print(token, end="", flush=True)
 
                 encoded = t.concat([encoded, t.tensor([token_id]).unsqueeze(0)], dim=-1)
 
