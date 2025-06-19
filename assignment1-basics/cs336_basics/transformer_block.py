@@ -13,9 +13,10 @@ class Transformer(t.nn.Module):
             d_ff: int,
             rope_theta: Optional[float] = None,
             rope_max_seq_len: Optional[int] = None,
-            device: Optional[t.device] = None
+            device: Optional[t.device] = None,
         ):
         super().__init__()
+        self.device = device
         self.ln1 = RMSNorm(d_model, device=device)
         self.ffn = SwiGLU(d_model, d_ff, device=device)
         self.ln2 = RMSNorm(d_model, device=device)
@@ -26,6 +27,6 @@ class Transformer(t.nn.Module):
         )
 
     def forward(self, x: t.Tensor) -> t.Tensor:
-        token_positions = t.arange(x.shape[1])
+        token_positions = t.arange(x.shape[1], device=self.device)
         y = self.attn(self.ln1(x), token_positions) + x
         return self.ffn(self.ln2(y)) + y
