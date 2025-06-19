@@ -7,7 +7,6 @@ def main():
     parser.add_arguments(TrainingArgs, dest="parsed")
     cli_args = parser.parse_args()
 
-
     with Trainer(cli_args.parsed) as t:
         t.train()
 

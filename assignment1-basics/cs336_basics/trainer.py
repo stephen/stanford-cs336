@@ -3,7 +3,7 @@ import pathlib
 import numpy as np
 import torch as t
 from dataclasses import asdict, dataclass, field
-from typing import Optional
+from typing import Literal, Optional, cast
 
 import wandb
 
@@ -61,9 +61,9 @@ class TrainingArgs:
 
     wandb_group_name: Optional[str] = None
     wandb_run_name: Optional[str] = None
+    wandb_log: Optional[str] = "gradients"
 
     device: t.device = default_device
-
 
 class Trainer:
     def __init__(self, args: TrainingArgs):
@@ -85,7 +85,8 @@ class Trainer:
             device=args.device,
         )
 
-        if self.args.compile:
+        # When logging parameters, compile doesn't play well.
+        if self.args.compile and self.args.wandb_log == "gradients":
             self.model.compile(backend=default_backend)
 
         self.optimizer = AdamW(
@@ -103,7 +104,7 @@ class Trainer:
             group=self.args.wandb_group_name,
             name=self.args.wandb_run_name,
         )
-        wandb.watch(self.model, log="gradients", log_freq=10)
+        wandb.watch(self.model, log=cast(Literal["gradients", "parameters", "all"], self.args.wandb_log), log_freq=10)
 
     def teardown(self):
         del self.tokenizer
@@ -183,10 +184,11 @@ class Trainer:
         t.save(self.model.state_dict(), path)
         print(f"saved to {path=}")
 
-        artifact = wandb.Artifact(pathlib.Path(path).name, type="model")
-        artifact.add_file(path)
-        wandb.log_artifact(artifact)
-        wandb.finish()
+        if wandb.run and wandb.run.sweep_id is None:
+            artifact = wandb.Artifact(pathlib.Path(path).name, type="model")
+            artifact.add_file(path)
+            wandb.log_artifact(artifact)
+            wandb.finish()
 
     def __enter__(self):
         self.setup()
