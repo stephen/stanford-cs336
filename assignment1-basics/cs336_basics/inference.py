@@ -43,7 +43,7 @@ def main():
         device=default_device,
     )
     with open(cli_args.model, "rb") as f:
-        t.load(f, model.state_dict())
+        model.load_state_dict(t.load(f))
 
     max_tokens = cli_args.max_tokens
     temperature = cli_args.temperature
