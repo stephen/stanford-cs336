@@ -10,7 +10,7 @@ def main(rank: int, world_size: int):
 
     training_args: TrainingArgs
     training_args = cli_args.parsed
-    training_args.rank = rank
+    training_args.local_rank = rank
     training_args.world_size = world_size
 
     with DistributedTrainer(training_args) as t:

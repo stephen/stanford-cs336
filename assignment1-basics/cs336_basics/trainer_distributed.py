@@ -54,7 +54,7 @@ class TrainingArgs:
 
     tokenizer_state: pathlib.Path
 
-    rank: int = -1
+    local_rank: int = -1
     world_size: int = -1
 
     validation_step_interval: Optional[int] = 100
@@ -84,13 +84,10 @@ class DistributedTrainer:
 
         self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
-        os.environ['MASTER_ADDR'] = 'localhost'
-        os.environ['MASTER_PORT'] = '12355'
 
-        dist.init_process_group("nccl", rank=self.args.rank, world_size=self.args.world_size)
+        dist.init_process_group("nccl")
 
-        # XXX: this doesn't work if pass just rank.
-        self.args.device = f"cuda:{args.rank}"
+        t.cuda.set_device(self.args.local_rank)
 
         self.model = DDP(TransformerLM(
             context_len=args.model_args.context_len,
@@ -103,7 +100,7 @@ class DistributedTrainer:
             device=args.device,
         ))
 
-        self.model = DDP(self.model, device_ids=[self.args.rank])
+        self.model = DDP(self.model, device_ids=[self.args.local_rank])
 
         # When logging parameters, compile doesn't play well.
         if self.args.compile and self.args.wandb_log == "gradients":
