@@ -1,6 +1,7 @@
 from typing import Optional
 import torch as t
 import numpy as np
+import torch.distributed as dist
 
 def get_batch(input: np.ndarray, batch_size: int, context_length: int, device: Optional[t.device] = None) -> tuple[t.Tensor, t.Tensor]:
     starts = np.random.randint(0, len(input) - context_length, size=batch_size)
