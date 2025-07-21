@@ -14,9 +14,7 @@ class RMSNorm(t.nn.Module):
     in_dtype = x.dtype
     x = x.to(t.float32)
 
-    d_model = self.gain.shape[0]
-
-    rms = t.sqrt((x**2).mean(dim=-1, keepdim=True) + self.eps)
+    rms = t.sqrt((x**2).mean(dim=-1, keepdim=True) + self.eps) # [b, n, 1]
 
     rv = x / rms * self.gain
 

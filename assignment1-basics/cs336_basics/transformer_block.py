@@ -30,3 +30,17 @@ class Transformer(t.nn.Module):
         token_positions = t.arange(x.shape[1], device=self.device)
         y = self.attn(self.ln1(x), token_positions) + x
         return self.ffn(self.ln2(y)) + y
+
+    # sequence_parallel(x) [seq_len[rank], model_dim]
+    # rms_norm(x) seq_parallel => [seq_len[rank], model_dim]
+    # all_gather(x) [seq_len, model_dim]
+    # FFN/attn (rowwise + colwise) [rank][seq_len, model]
+    # reduce_scatter(y) [seq_len[rank], model]
+    # y + res seq_parallel [seq_len[rank], model_dim]
+    # rms_norm
+    # all_gather
+
+    # https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html
+    # > Note: Executing ReduceScatter, followed by AllGather, is equivalent to the AllReduce operation.
+
+# all_reduce = reduce-scatter + all-gather
