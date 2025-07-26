@@ -1,4 +1,5 @@
 from typing import Optional
+
 import torch as t
 
 class Embedding(t.nn.Module):

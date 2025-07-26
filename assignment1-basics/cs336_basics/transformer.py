@@ -8,6 +8,7 @@ from cs336_basics.rmsnorm import RMSNorm
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer_block import Transformer
 from functools import reduce
+from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module, SequenceParallel
 
 class TransformerLM(t.nn.Module):
     def __init__(
@@ -24,6 +25,19 @@ class TransformerLM(t.nn.Module):
         super().__init__()
         self.context_len = context_len
         self.embedding = Embedding(vocab_size, d_model, device=device)
+
+        layer_tp_plan = {
+            "attn.Wq": ColwiseParallel(use_local_output=False),
+            "attn.Wk": ColwiseParallel(use_local_output=False),
+            "attn.Wv": ColwiseParallel(use_local_output=False),
+            "attn.Wo": RowwiseParallel(),
+            "ffn.w1": ColwiseParallel(),
+            "ffn.w2": RowwiseParallel(),
+            "ffn.w3": ColwiseParallel(),
+            "ln1": SequenceParallel(),
+            "ln2": SequenceParallel(),
+        }
+
         self.layers = t.nn.ModuleList([Transformer(
             d_model=d_model,
             d_ff=d_ff,
@@ -32,6 +46,9 @@ class TransformerLM(t.nn.Module):
             rope_theta=rope_theta,
             device=device,
         ) for _ in range(n_layers)])
+
+        for layer in self.layers:
+            parallelize_module(layer, parallelize_plan=layer_tp_plan)
 
         self.ln = RMSNorm(d_model, device=device)
         self.output = Linear(d_model, vocab_size, device=device)

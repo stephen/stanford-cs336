@@ -20,6 +20,7 @@ from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 from cs336_basics.gradient_clipping import clip_gradients
+from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module
 
 
 default_device = t.device('mps:0') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
@@ -85,9 +86,9 @@ class DistributedTrainer:
         self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
 
-        dist.init_process_group("nccl")
+        dist.init_process_group("gloo")
 
-        t.cuda.set_device(self.args.local_rank)
+        # t.cuda.set_device(self.args.local_rank)
 
         self.model = DDP(TransformerLM(
             context_len=args.model_args.context_len,
