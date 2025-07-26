@@ -1,5 +1,5 @@
 import itertools
-from typing import Optional
+from typing import Any, Optional
 import torch as t
 
 from cs336_basics.embedding import Embedding
@@ -9,6 +9,7 @@ from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer_block import Transformer
 from functools import reduce
 from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module, SequenceParallel
+from torch.distributed.tensor import Replicate, Shard
 
 class TransformerLM(t.nn.Module):
     def __init__(
@@ -20,11 +21,13 @@ class TransformerLM(t.nn.Module):
             n_heads: int,
             d_ff: int,
             rope_theta: Optional[float] = None,
-            device: Optional[t.device] = None
+            device: Optional[t.device] = None,
+            mesh: Optional[Any] = None,
         ):
         super().__init__()
         self.context_len = context_len
-        self.embedding = Embedding(vocab_size, d_model, device=device)
+        self.embedding = t.nn.Embedding(vocab_size, d_model, device=device)
+        self.mesh = mesh
 
         layer_tp_plan = {
             "attn.Wq": ColwiseParallel(use_local_output=False),
@@ -47,11 +50,26 @@ class TransformerLM(t.nn.Module):
             device=device,
         ) for _ in range(n_layers)])
 
-        for layer in self.layers:
-            parallelize_module(layer, parallelize_plan=layer_tp_plan)
-
         self.ln = RMSNorm(d_model, device=device)
-        self.output = Linear(d_model, vocab_size, device=device)
+        self.output = t.nn.Linear(d_model, vocab_size, device=device)
+
+        if self.mesh:
+            for layer in self.layers:
+                parallelize_module(layer, parallelize_plan=layer_tp_plan, device_mesh=self.mesh["tp"])
+            transformer_tp_plan = {
+                "embedding": RowwiseParallel(
+                    input_layouts=Replicate(),
+                    output_layouts=Shard(1),
+                ),
+                "ln": SequenceParallel(),
+                "output": ColwiseParallel(
+                    input_layouts=Shard(1),
+                    output_layouts=Replicate()
+                ),
+            }
+            parallelize_module(self, parallelize_plan=transformer_tp_plan, device_mesh=self.mesh["tp"])
+
+
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         assert x.shape[-1] <= self.context_len, f"context_len cannot exceed max {self.context_len}, got {x.shape[-1]}"

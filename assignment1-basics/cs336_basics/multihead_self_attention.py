@@ -3,7 +3,6 @@ from jaxtyping import Float
 from typing import Optional, overload
 import torch as t
 
-from cs336_basics.linear import Linear
 from cs336_basics.rope import RoPE
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
 
@@ -27,10 +26,10 @@ class MultiHeadSelfAttention(t.nn.Module):
         else:
             self.rope = None
 
-        self.Wq = Linear(d_model, self.d_h * n_heads, device=device)
-        self.Wk = Linear(d_model, self.d_h * n_heads, device=device)
-        self.Wv = Linear(d_model, self.d_h * n_heads, device=device)
-        self.Wo = Linear(self.d_h * n_heads, d_model, device=device)
+        self.Wq = t.nn.Linear(d_model, self.d_h * n_heads, device=device)
+        self.Wk = t.nn.Linear(d_model, self.d_h * n_heads, device=device)
+        self.Wv = t.nn.Linear(d_model, self.d_h * n_heads, device=device)
+        self.Wo = t.nn.Linear(self.d_h * n_heads, d_model, device=device)
 
     def forward(self, x: Float[t.Tensor, "... n d"], token_positions: Optional[Float[t.Tensor, "n"]] = None) -> t.Tensor:
         assert ((token_positions is None) == (self.rope is None)), "token_positions can only be specified if rope parameters are specified"

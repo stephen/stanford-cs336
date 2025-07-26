@@ -6,6 +6,7 @@ import torch as t
 class Linear(t.nn.Module):
   def __init__(self, in_features: int, out_features: int, device: Optional[t.device] = None, dtype: Optional[t.dtype] = None):
     super().__init__()
+    assert False, "Linear should not be used"
 
     w = t.zeros((out_features, in_features), device=device, dtype=dtype)
     variance = 2 / (in_features + out_features)

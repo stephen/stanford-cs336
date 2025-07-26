@@ -3,7 +3,7 @@ import pathlib
 import numpy as np
 import torch as t
 from dataclasses import asdict, dataclass, field
-from typing import Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 import os
 import torch.distributed as dist
@@ -21,6 +21,7 @@ from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 from cs336_basics.gradient_clipping import clip_gradients
 from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module
+from torch.distributed.tensor import distribute_tensor
 
 
 default_device = t.device('mps:0') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
@@ -76,21 +77,22 @@ class TrainingArgs:
 
     device: t.device = default_device
 
+    # Parallelisms.
+    dp: int = -1
+    tp: int = -1
+
+
 class DistributedTrainer:
-    def __init__(self, args: TrainingArgs):
+    def __init__(self, args: TrainingArgs, mesh: Any):
         self.args = args
+        self.mesh = mesh
 
     def setup(self):
         args = self.args
 
         self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
-
-        dist.init_process_group("gloo")
-
-        # t.cuda.set_device(self.args.local_rank)
-
-        self.model = DDP(TransformerLM(
+        self.model = TransformerLM(
             context_len=args.model_args.context_len,
             d_ff=args.model_args.d_ff,
             d_model=args.model_args.d_model,
@@ -99,9 +101,11 @@ class DistributedTrainer:
             rope_theta=args.model_args.rope_theta,
             vocab_size=args.model_args.vocab_size,
             device=args.device,
-        ))
+            mesh=self.mesh,
+        )
 
-        self.model = DDP(self.model, device_ids=[self.args.local_rank])
+        if args.dp > 0:
+            self.model = DDP(self.model)
 
         # When logging parameters, compile doesn't play well.
         if self.args.compile and self.args.wandb_log == "gradients":
@@ -136,6 +140,7 @@ class DistributedTrainer:
         del self.model
 
     def training_step(self, x: t.Tensor, label: t.Tensor):
+        x = distribute_tensor(x, device_mesh=self.mesh)
         output = self.model(x)
         loss = cross_entropy(output, label)
         loss.backward()
@@ -153,6 +158,8 @@ class DistributedTrainer:
     def evaluate(self):
         self.model.eval()
         x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+
+        x = distribute_tensor(x, device_mesh=self.mesh)
         output = self.model(x)
         loss = cross_entropy(output, label)
         perplexity = loss.exp()
