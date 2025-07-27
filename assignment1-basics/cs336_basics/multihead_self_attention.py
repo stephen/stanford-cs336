@@ -21,8 +21,8 @@ class MultiHeadSelfAttention(t.nn.Module):
         self.d_h = d_model // n_heads
         self.mesh = mesh
 
-        # self.local_heads = n_heads // tp if tp else n_heads
-        self.local_heads = n_heads
+        assert tp != -1, "-1 crashes"
+        self.local_heads = n_heads // tp if tp else n_heads
         self.device = device
 
         assert ((rope_theta is None) == (rope_max_seq_length is None)), "rope_theta and rope_max_seq_length must both be specified or not"

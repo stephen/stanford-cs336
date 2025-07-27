@@ -73,7 +73,7 @@ class TrainingArgs:
 
     wandb_group_name: Optional[str] = None
     wandb_run_name: Optional[str] = None
-    wandb_log: Optional[str] = "gradients"
+    wandb_log: Optional[str] = None
 
     device: t.device = default_device
 
@@ -141,10 +141,10 @@ class DistributedTrainer:
         del self.model
 
     def training_step(self, x: t.Tensor, label: t.Tensor):
-        x = distribute_tensor(x, device_mesh=self.mesh)
         output = self.model(x)
         loss = cross_entropy(output, label)
         loss.backward()
+        print(f"{self.args.local_rank=} {loss=}")
 
         if self.args.clip_gradient_to_max_norm is not None:
             clip_gradients(
@@ -158,9 +158,16 @@ class DistributedTrainer:
 
     def evaluate(self):
         self.model.eval()
-        x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+        if self.args.local_rank == 0:
+            x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+        else:
+            x = t.empty((self.args.batch_size, self.args.model_args.context_len), device=self.args.device).long()
+            label = t.empty((self.args.batch_size, self.args.model_args.context_len), device=self.args.device).long()
 
-        x = distribute_tensor(x, device_mesh=self.mesh)
+        if self.args.tp > 1:
+            x = distribute_tensor(x, device_mesh=self.mesh)
+            label = distribute_tensor(label, device_mesh=self.mesh).to_local()
+
         output = self.model(x)
         loss = cross_entropy(output, label)
         perplexity = loss.exp()
@@ -188,7 +195,17 @@ class DistributedTrainer:
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
 
-            x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+            print("local rank", self.args.local_rank)
+            if self.args.local_rank == 0:
+                x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
+            else:
+                x = t.empty((self.args.batch_size, self.args.model_args.context_len), device=self.args.device).long()
+                label = t.empty((self.args.batch_size, self.args.model_args.context_len), device=self.args.device).long()
+
+            if self.args.tp > 1:
+                x = distribute_tensor(x, device_mesh=self.mesh)
+                label = distribute_tensor(label, device_mesh=self.mesh).to_local()
+
             test_loss = self.training_step(x, label)
 
             if self.args.checkpoint_step_interval is not None and step % self.args.checkpoint_step_interval == 0:

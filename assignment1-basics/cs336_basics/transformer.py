@@ -30,27 +30,6 @@ class TransformerLM(t.nn.Module):
         self.embedding = t.nn.Embedding(vocab_size, d_model, device=device)
         self.mesh = mesh
 
-        local_attn_proj = False
-        layer_tp_plan = {
-            "attn.Wq": ColwiseParallel(use_local_output=local_attn_proj),
-            "attn.Wk": ColwiseParallel(use_local_output=local_attn_proj),
-            "attn.Wv": ColwiseParallel(use_local_output=local_attn_proj),
-            "attn.Wo": RowwiseParallel(output_layouts=Shard(1)),
-            "attn": PrepareModuleInput(
-                input_layouts=(Shard(1), Replicate()),
-                desired_input_layouts=(Replicate(), Replicate()),
-            ),
-            "ln1": SequenceParallel(),
-            "ffn": PrepareModuleInput(
-                input_layouts=(Shard(1),),
-                desired_input_layouts=(Replicate(),),
-            ),
-            "ffn.w1": ColwiseParallel(),
-            "ffn.w2": RowwiseParallel(output_layouts=Shard(1)),
-            "ffn.w3": ColwiseParallel(),
-            "ln2": SequenceParallel(),
-        }
-
         self.layers = t.nn.ModuleList([Transformer(
             d_model=d_model,
             d_ff=d_ff,
@@ -65,9 +44,31 @@ class TransformerLM(t.nn.Module):
         self.ln = RMSNorm(d_model, device=device)
         self.output = t.nn.Linear(d_model, vocab_size, device=device)
 
-        if self.mesh:
+        if self.mesh and tp > 1:
+            local_attn_proj = True
+            layer_tp_plan = {
+                "attn.Wq": ColwiseParallel(use_local_output=local_attn_proj),
+                "attn.Wk": ColwiseParallel(use_local_output=local_attn_proj),
+                "attn.Wv": ColwiseParallel(use_local_output=local_attn_proj),
+                # attn_out = [n, d_c]
+                "attn.Wo": RowwiseParallel(output_layouts=Shard(1)),
+                "attn": PrepareModuleInput(
+                    input_layouts=(Shard(1), Replicate()),
+                    desired_input_layouts=(Replicate(), Replicate()),
+                ),
+                "ln1": SequenceParallel(),
+                "ffn": PrepareModuleInput(
+                    input_layouts=(Shard(1),),
+                    desired_input_layouts=(Replicate(),),
+                ),
+                "ffn.w1": ColwiseParallel(),
+                "ffn.w2": RowwiseParallel(output_layouts=Shard(1)),
+                "ffn.w3": ColwiseParallel(),
+                "ln2": SequenceParallel(),
+            }
             for layer in self.layers:
                 parallelize_module(layer, parallelize_plan=layer_tp_plan, device_mesh=self.mesh["tp"])
+
             transformer_tp_plan = {
                 "embedding": RowwiseParallel( # vocab parallel E_w = [V, D]
                     input_layouts=Replicate(),
