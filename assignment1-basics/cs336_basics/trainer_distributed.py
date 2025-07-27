@@ -153,13 +153,14 @@ class DistributedTrainer:
         self.training_set = np.load(self.args.training_set)
         self.validation_set = np.load(self.args.validation_set)
 
-        wandb.init(
-            project="timlm",
-            config=asdict(self.args),
-            group=self.args.wandb_group_name,
-            name=self.args.wandb_run_name,
-        )
-        wandb.watch(self.model, log=cast(Literal["gradients", "parameters", "all"], self.args.wandb_log), log_freq=10)
+        if self.args.local_rank == 0:
+            wandb.init(
+                project="timlm",
+                config=asdict(self.args),
+                group=self.args.wandb_group_name,
+                name=self.args.wandb_run_name,
+            )
+            wandb.watch(self.model, log=cast(Literal["gradients", "parameters", "all"], self.args.wandb_log), log_freq=10)
 
     def teardown(self):
         dist.destroy_process_group()
@@ -185,6 +186,7 @@ class DistributedTrainer:
         return loss
 
     def evaluate(self):
+        return t.tensor(0.0), t.tensor(0.0)
         self.model.eval()
         if self.args.local_rank == 0:
             x, label = get_batch(self.validation_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
@@ -215,7 +217,8 @@ class DistributedTrainer:
         # t.autograd.set_detect_anomaly(True)
         iter = tqdm(range(self.args.steps))
         valid_loss, valid_perplexity = self.evaluate()
-        wandb.log({"valid_loss": valid_loss, "valid_perplexity": valid_perplexity}, step=0)
+        if self.args.local_rank == 0:
+            wandb.log({"valid_loss": valid_loss, "valid_perplexity": valid_perplexity}, step=0)
 
         for step in iter:
             self.model.train()
@@ -249,12 +252,13 @@ class DistributedTrainer:
                 "valid_loss": f"{valid_loss.cpu().item():.2f}",
                 "valid_perplexity": f"{valid_perplexity.cpu().item():.2f}",
             })
-            wandb.log({
-                "test_loss": test_loss,
-                "valid_loss": valid_loss,
-                "valid_perplexity": valid_perplexity,
-                "lr": lr,
-            }, step=step)
+            if self.args.local_rank == 0:
+                wandb.log({
+                    "test_loss": test_loss,
+                    "valid_loss": valid_loss,
+                    "valid_perplexity": valid_perplexity,
+                    "lr": lr,
+                }, step=step)
 
         path = f"./data/model.pth"
         t.save(self.model.state_dict(), path)
