@@ -5,7 +5,7 @@ import torch as t
 
 from cs336_basics.rope import RoPE
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
-from torch.distributed.tensor import distribute_tensor, Replicate, Shard
+from torch.distributed.tensor import distribute_tensor, Replicate, Shard, DTensor
 
 
 class MultiHeadSelfAttention(t.nn.Module):
@@ -22,12 +22,13 @@ class MultiHeadSelfAttention(t.nn.Module):
         self.mesh = mesh
 
         assert tp != -1, "-1 crashes"
-        self.local_heads = n_heads // tp if tp else n_heads
+        # self.local_heads = n_heads // tp if tp else n_heads
+        self.local_heads = n_heads
         self.device = device
 
         assert ((rope_theta is None) == (rope_max_seq_length is None)), "rope_theta and rope_max_seq_length must both be specified or not"
         if rope_theta is not None and rope_max_seq_length is not None:
-            self.rope = RoPE(rope_theta, self.d_h, rope_max_seq_length, device=device)
+            self.rope = RoPE(rope_theta, self.d_h, rope_max_seq_length, device=device, mesh=self.mesh)
         else:
             self.rope = None
 
@@ -53,14 +54,16 @@ class MultiHeadSelfAttention(t.nn.Module):
 
         n = q.shape[-2]
         m = k.shape[-2]
-        mask = t.tril(t.ones((n, m), device=self.device)).bool()
+        mask = DTensor.from_local(t.ones((n, m), device=self.device), device_mesh=self.mesh)
+        # mask = t.ones((n, m), device=self.device)
+        mask = t.tril(mask).bool()
 
         if self.rope:
             q = self.rope(q, token_positions)
             k = self.rope(k, token_positions)
 
         # This expects things to be in the shape [... n d].
-        a = scaled_dot_product_attention(q, k, v, mask)
+        a = scaled_dot_product_attention(q, k, v, mask, self.mesh)
 
         a = einops.rearrange(a, "... h n d -> ... n (h d)")
 

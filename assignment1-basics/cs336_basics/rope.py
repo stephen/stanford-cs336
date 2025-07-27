@@ -1,17 +1,19 @@
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 import einops
 import torch as t
+from torch.distributed.tensor import distribute_tensor, Replicate, Shard, DTensor
 
 class RoPE(t.nn.Module):
     cos_cached: t.Tensor
     sin_cached: t.Tensor
 
-    def __init__(self, theta: float, d_k: int, max_seq_length: int, device: Optional[t.device] = None):
+    def __init__(self, theta: float, d_k: int, max_seq_length: int, device: Optional[t.device] = None, mesh: Optional[Any] = None):
         super().__init__()
         self.theta = theta
         self.d_k = d_k
         self.max_seq_length = max_seq_length
         self.device = device
+        self.mesh = mesh
 
         # self.register_buffer("cos_cached", c, persistent=False)
         # self.register_buffer("sin_cached", s, persistent=False)
@@ -30,6 +32,9 @@ class RoPE(t.nn.Module):
 
     def forward(self, x: t.Tensor, token_positions: t.Tensor) -> t.Tensor:
         c, s = self._precompute()
+
+        c = DTensor.from_local(c, device_mesh=self.mesh)
+        s = DTensor.from_local(s, device_mesh=self.mesh)
         # c = self.cos_cached[token_positions]
         # s = self.sin_cached[token_positions]
 

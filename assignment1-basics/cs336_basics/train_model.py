@@ -5,6 +5,8 @@ from torch.distributed.device_mesh import init_device_mesh
 import numpy as np
 import torch as t
 
+from torch.distributed.tensor.debug import CommDebugMode
+
 from cs336_basics.trainer_distributed import DistributedTrainer, TrainingArgs
 
 def main():
@@ -26,6 +28,7 @@ def main():
     training_args.world_size = int(os.environ["WORLD_SIZE"])
 
     with DistributedTrainer(training_args, mesh) as trainer:
+        # with CommDebugMode():
         trainer.train()
 
 if __name__ == "__main__":

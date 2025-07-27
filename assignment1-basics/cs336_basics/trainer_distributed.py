@@ -1,3 +1,4 @@
+from functools import partial
 from tqdm import tqdm
 import pathlib
 import numpy as np
@@ -21,7 +22,8 @@ from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 from cs336_basics.gradient_clipping import clip_gradients
 from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module
-from torch.distributed.tensor import distribute_tensor
+from torch.distributed.tensor import distribute_tensor, DTensor
+
 
 
 default_device = t.device('mps:0') if t.backends.mps.is_available() else t.device('cuda') if t.cuda.is_available() else t.device('cpu')
@@ -108,6 +110,33 @@ class DistributedTrainer:
         if args.dp > 0:
             self.model = DDP(self.model)
 
+        def backward_hook(name, module, grad_output):
+            if dist.get_rank() != 0:
+                return
+            print(f"[{dist.get_rank()}] Backward through {module.__class__.__name__} @ ---{name}---")
+            for i, g in enumerate(grad_output):
+                if g is not None:
+                    print(f"[{dist.get_rank()}]    grad_output[{i}]: DTensor={isinstance(g, DTensor)}, shape={g.shape}")
+            # for i, g in enumerate(grad_input):
+            #     if g is not None:
+            #         print(f"[{dist.get_rank()}]    grad_input[{i}]: DTensor={isinstance(g, DTensor)}, shape={g.shape}")
+
+
+            return None
+
+        def backward_hook_complete(name, module, grad_input, grad_output):
+            if dist.get_rank() != 0:
+                return
+            print(f"[{dist.get_rank()}] Backward through {module.__class__.__name__} @ ---{name}--- DONE")
+            return None
+
+
+
+        # Register on all modules
+        # for name, module in self.model.named_modules():
+        #     module.register_full_backward_pre_hook(partial(backward_hook, name))
+        #     module.register_full_backward_hook(partial(backward_hook_complete, name))
+
         # When logging parameters, compile doesn't play well.
         if self.args.compile and self.args.wandb_log == "gradients":
             self.model.compile(backend=default_backend)
@@ -144,7 +173,6 @@ class DistributedTrainer:
         output = self.model(x)
         loss = cross_entropy(output, label)
         loss.backward()
-        print(f"{self.args.local_rank=} {loss=}")
 
         if self.args.clip_gradient_to_max_norm is not None:
             clip_gradients(
@@ -184,6 +212,7 @@ class DistributedTrainer:
         )
 
     def train(self):
+        # t.autograd.set_detect_anomaly(True)
         iter = tqdm(range(self.args.steps))
         valid_loss, valid_perplexity = self.evaluate()
         wandb.log({"valid_loss": valid_loss, "valid_perplexity": valid_perplexity}, step=0)
@@ -195,7 +224,7 @@ class DistributedTrainer:
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] = lr
 
-            print("local rank", self.args.local_rank)
+            # print("local rank", self.args.local_rank)
             if self.args.local_rank == 0:
                 x, label = get_batch(self.training_set, self.args.batch_size, self.args.model_args.context_len, device=self.args.device)
             else:
