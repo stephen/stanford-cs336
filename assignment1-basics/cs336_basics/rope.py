@@ -33,8 +33,9 @@ class RoPE(t.nn.Module):
     def forward(self, x: t.Tensor, token_positions: t.Tensor) -> t.Tensor:
         c, s = self._precompute()
 
-        c = DTensor.from_local(c, device_mesh=self.mesh)
-        s = DTensor.from_local(s, device_mesh=self.mesh)
+        if self.mesh:
+            c = DTensor.from_local(c, device_mesh=self.mesh)
+            s = DTensor.from_local(s, device_mesh=self.mesh)
         # c = self.cos_cached[token_positions]
         # s = self.sin_cached[token_positions]
 

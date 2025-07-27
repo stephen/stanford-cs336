@@ -21,7 +21,7 @@ class MultiHeadSelfAttention(t.nn.Module):
         self.d_h = d_model // n_heads
         self.mesh = mesh
 
-        assert tp != -1, "-1 crashes"
+        # assert tp != -1, "-1 crashes"
         # self.local_heads = n_heads // tp if tp else n_heads
         self.local_heads = n_heads
         self.device = device
@@ -54,8 +54,10 @@ class MultiHeadSelfAttention(t.nn.Module):
 
         n = q.shape[-2]
         m = k.shape[-2]
-        mask = DTensor.from_local(t.ones((n, m), device=self.device), device_mesh=self.mesh)
-        # mask = t.ones((n, m), device=self.device)
+        if self.mesh:
+            mask = DTensor.from_local(t.ones((n, m), device=self.device), device_mesh=self.mesh)
+        else:
+            mask = t.ones((n, m), device=self.device)
         mask = t.tril(mask).bool()
 
         if self.rope:

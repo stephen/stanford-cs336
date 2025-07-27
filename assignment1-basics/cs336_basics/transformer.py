@@ -24,11 +24,13 @@ class TransformerLM(t.nn.Module):
             device: Optional[t.device] = None,
             mesh: Optional[Any] = None,
             tp = -1,
+            loss_parallel: Optional[bool] = False,
         ):
         super().__init__()
         self.context_len = context_len
         self.embedding = t.nn.Embedding(vocab_size, d_model, device=device)
         self.mesh = mesh
+        self.loss_parallel = loss_parallel
 
         self.layers = t.nn.ModuleList([Transformer(
             d_model=d_model,
@@ -69,6 +71,7 @@ class TransformerLM(t.nn.Module):
             for layer in self.layers:
                 parallelize_module(layer, parallelize_plan=layer_tp_plan, device_mesh=self.mesh["tp"])
 
+            # print("loss parallel?", self.loss_parallel)
             transformer_tp_plan = {
                 "embedding": RowwiseParallel( # vocab parallel E_w = [V, D]
                     input_layouts=Replicate(),
@@ -77,9 +80,11 @@ class TransformerLM(t.nn.Module):
                 "ln": SequenceParallel(),
                 "output": ColwiseParallel( # vocab parallel O_w = [D, V]
                     input_layouts=Shard(1),
-                    output_layouts=Replicate()
+                    output_layouts=(Shard(2) if self.loss_parallel else Replicate()),
+                    use_local_output=(False if self.loss_parallel else True),
                 ),
             }
+            # print(transformer_tp_plan)
             parallelize_module(self, parallelize_plan=transformer_tp_plan, device_mesh=self.mesh["tp"])
 
 

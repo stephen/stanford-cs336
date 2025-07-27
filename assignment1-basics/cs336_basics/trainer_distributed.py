@@ -21,7 +21,7 @@ from cs336_basics.lr_cosine_schedule import lr_cosine_schedule
 from cs336_basics.tokenizer_cls import Tokenizer
 from cs336_basics.transformer import TransformerLM
 from cs336_basics.gradient_clipping import clip_gradients
-from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module
+from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module, loss_parallel
 from torch.distributed.tensor import distribute_tensor, DTensor
 
 
@@ -82,6 +82,8 @@ class TrainingArgs:
     # Parallelisms.
     dp: int = -1
     tp: int = -1
+    loss_parallel: bool = False
+    fsdp: int = -1
 
 
 class DistributedTrainer:
@@ -94,6 +96,11 @@ class DistributedTrainer:
 
         self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
+        if args.dp > 0 or args.fsdp > 0:
+            if not dist.is_initialized():
+                dist.init_process_group("nccl") # DDP() is old, so we still need to init process group for it
+                t.cuda.set_device(self.args.local_rank)
+
         self.model = TransformerLM(
             context_len=args.model_args.context_len,
             d_ff=args.model_args.d_ff,
@@ -105,10 +112,11 @@ class DistributedTrainer:
             device=args.device,
             mesh=self.mesh,
             tp=self.args.tp,
+            loss_parallel=args.loss_parallel,
         )
 
         if args.dp > 0:
-            self.model = DDP(self.model)
+            self.model = DDP(self.model, device_ids=[self.args.local_rank])
 
         def backward_hook(name, module, grad_output):
             if dist.get_rank() != 0:
@@ -172,8 +180,15 @@ class DistributedTrainer:
 
     def training_step(self, x: t.Tensor, label: t.Tensor):
         output = self.model(x)
-        loss = cross_entropy(output, label)
-        loss.backward()
+        if self.args.loss_parallel:
+            with loss_parallel():
+                loss = t.nn.functional.cross_entropy(output.flatten(0, 1), label.flatten(0, 1))
+                loss.backward()
+        else:
+            if isinstance(label, DTensor):
+                label = label.to_local()
+            loss = cross_entropy(output, label)
+            loss.backward()
 
         if self.args.clip_gradient_to_max_norm is not None:
             clip_gradients(
@@ -236,7 +251,7 @@ class DistributedTrainer:
 
             if self.args.tp > 1:
                 x = distribute_tensor(x, device_mesh=self.mesh)
-                label = distribute_tensor(label, device_mesh=self.mesh).to_local()
+                label = distribute_tensor(label, device_mesh=self.mesh)
 
             test_loss = self.training_step(x, label)
 
