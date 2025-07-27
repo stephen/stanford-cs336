@@ -23,6 +23,8 @@ from cs336_basics.transformer import TransformerLM
 from cs336_basics.gradient_clipping import clip_gradients
 from torch.distributed.tensor.parallel import ColwiseParallel, RowwiseParallel, parallelize_module, loss_parallel
 from torch.distributed.tensor import distribute_tensor, DTensor
+from torch.distributed.fsdp import fully_shard, FSDPModule
+import torch.profiler as profiler
 
 
 
@@ -83,7 +85,7 @@ class TrainingArgs:
     dp: int = -1
     tp: int = -1
     loss_parallel: bool = False
-    fsdp: int = -1
+    fsdp: bool = False
 
 
 class DistributedTrainer:
@@ -96,7 +98,7 @@ class DistributedTrainer:
 
         self.tokenizer = Tokenizer.from_file(str(args.tokenizer_state))
 
-        if args.dp > 0 or args.fsdp > 0:
+        if args.dp > 0 or args.fsdp:
             if not dist.is_initialized():
                 dist.init_process_group("nccl") # DDP() is old, so we still need to init process group for it
                 t.cuda.set_device(self.args.local_rank)
@@ -117,6 +119,10 @@ class DistributedTrainer:
 
         if args.dp > 0:
             self.model = DDP(self.model, device_ids=[self.args.local_rank])
+        elif args.fsdp:
+            for layer in self.model.layers:
+                fully_shard(layer, mesh=self.mesh)
+            fully_shard(self.model, mesh=self.mesh)
 
         def backward_hook(name, module, grad_output):
             if dist.get_rank() != 0:
@@ -139,6 +145,8 @@ class DistributedTrainer:
             return None
 
 
+        # self.model.register_backward_hook(partial)
+        # self.model.register_full_backward_pre_hook(partial(backward_hook, "model"))
 
         # Register on all modules
         # for name, module in self.model.named_modules():
@@ -179,25 +187,38 @@ class DistributedTrainer:
         del self.model
 
     def training_step(self, x: t.Tensor, label: t.Tensor):
-        output = self.model(x)
-        if self.args.loss_parallel:
-            with loss_parallel():
-                loss = t.nn.functional.cross_entropy(output.flatten(0, 1), label.flatten(0, 1))
+
+        with profiler.profile(
+            activities=[
+                profiler.ProfilerActivity.CPU,
+                profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        ) as prof:
+            output = self.model(x)
+            if self.args.loss_parallel:
+                with loss_parallel():
+                    loss = t.nn.functional.cross_entropy(output.flatten(0, 1), label.flatten(0, 1))
+                    loss.backward()
+            else:
+                if isinstance(label, DTensor):
+                    label = label.to_local()
+                loss = cross_entropy(output, label)
                 loss.backward()
-        else:
-            if isinstance(label, DTensor):
-                label = label.to_local()
-            loss = cross_entropy(output, label)
-            loss.backward()
 
-        if self.args.clip_gradient_to_max_norm is not None:
-            clip_gradients(
-                self.model.parameters(),
-                self.args.clip_gradient_to_max_norm,
-            )
+        # if self.args.clip_gradient_to_max_norm is not None:
+        #     clip_gradients(
+        #         self.model.parameters(),
+        #         self.args.clip_gradient_to_max_norm,
+        #     )
 
-        self.optimizer.step()
-        self.optimizer.zero_grad()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+
+        prof.export_chrome_trace(f"nccl_trace_rank{dist.get_rank()}.json")
+        exit(0)
         return loss
 
     def evaluate(self):
