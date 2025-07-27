@@ -102,6 +102,7 @@ class DistributedTrainer:
             vocab_size=args.model_args.vocab_size,
             device=args.device,
             mesh=self.mesh,
+            tp=self.args.tp,
         )
 
         if args.dp > 0:

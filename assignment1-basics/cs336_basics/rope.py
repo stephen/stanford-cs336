@@ -12,10 +12,9 @@ class RoPE(t.nn.Module):
         self.d_k = d_k
         self.max_seq_length = max_seq_length
         self.device = device
-        c, s = self._precompute()
 
-        self.register_buffer("cos_cached", c, persistent=False)
-        self.register_buffer("sin_cached", s, persistent=False)
+        # self.register_buffer("cos_cached", c, persistent=False)
+        # self.register_buffer("sin_cached", s, persistent=False)
 
     def _precompute(self) -> Tuple[t.Tensor, t.Tensor]:
         positions = t.arange(self.max_seq_length, device=self.device, dtype=t.float16)
@@ -30,12 +29,18 @@ class RoPE(t.nn.Module):
 
 
     def forward(self, x: t.Tensor, token_positions: t.Tensor) -> t.Tensor:
-        c = self.cos_cached[token_positions]
-        s = self.sin_cached[token_positions]
+        c, s = self._precompute()
+        # c = self.cos_cached[token_positions]
+        # s = self.sin_cached[token_positions]
 
         # In the last dimension (d_model), grab all of the even/odd indices.
+
+        # x torch.Size([24, 16, 256, 16])
+
         x_even = x[..., 0::2]
         x_odd = x[..., 1::2]
+
+        # rv_even torch.Size([256, 16]) torch.Size([24, 16, 256, 8])
 
         rv_even = c * x_even - s * x_odd
         rv_odd = s * x_even + c * x_odd

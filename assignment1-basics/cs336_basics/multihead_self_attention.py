@@ -1,23 +1,28 @@
 import einops
 from jaxtyping import Float
-from typing import Optional, overload
+from typing import Any, Optional, overload
 import torch as t
 
 from cs336_basics.rope import RoPE
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
+from torch.distributed.tensor import distribute_tensor, Replicate, Shard
 
 
 class MultiHeadSelfAttention(t.nn.Module):
     @overload
-    def __init__(self, d_model: int, n_heads: int, rope_theta: Optional[float], rope_max_seq_length: Optional[int], device: Optional[t.device] = None): ...
+    def __init__(self, d_model: int, n_heads: int, rope_theta: Optional[float], rope_max_seq_length: Optional[int], device: Optional[t.device] = None, mesh: Optional[Any] = None): ...
     @overload
     def __init__(self, d_model: int, n_heads: int): ...
 
-    def __init__(self, d_model: int, n_heads: int, rope_theta: Optional[float] = None, rope_max_seq_length: Optional[int] = None, device: Optional[t.device] = None):
+    def __init__(self, d_model: int, n_heads: int, rope_theta: Optional[float] = None, rope_max_seq_length: Optional[int] = None, device: Optional[t.device] = None, tp: Optional[int] = None, mesh: Optional[Any] = None):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.d_h = d_model // n_heads
+        self.mesh = mesh
+
+        # self.local_heads = n_heads // tp if tp else n_heads
+        self.local_heads = n_heads
         self.device = device
 
         assert ((rope_theta is None) == (rope_max_seq_length is None)), "rope_theta and rope_max_seq_length must both be specified or not"
@@ -34,16 +39,17 @@ class MultiHeadSelfAttention(t.nn.Module):
     def forward(self, x: Float[t.Tensor, "... n d"], token_positions: Optional[Float[t.Tensor, "n"]] = None) -> t.Tensor:
         assert ((token_positions is None) == (self.rope is None)), "token_positions can only be specified if rope parameters are specified"
 
-        q = self.Wq(x)
+        q = self.Wq(x) # [b, n, self.d_h * n_heads / tp] => [b, n, d_h * local_heads]
         k = self.Wk(x)
         v = self.Wv(x)
 
         # Note that the input shape here should be (h d) not (d h) because the weights
         # given to use in the adapter are annotated as "d_k d_in", i.e. in our notation
         # "d_heads d_model".
-        q = einops.rearrange(q, "... n (h d) -> ... h n d", h=self.n_heads)
-        k = einops.rearrange(k, "... n (h d) -> ... h n d", h=self.n_heads)
-        v = einops.rearrange(v, "... n (h d) -> ... h n d", h=self.n_heads)
+        q = einops.rearrange(q, "... n (h d) -> ... h n d", h=self.local_heads)
+        k = einops.rearrange(k, "... n (h d) -> ... h n d", h=self.local_heads)
+        v = einops.rearrange(v, "... n (h d) -> ... h n d", h=self.local_heads)
+
 
         n = q.shape[-2]
         m = k.shape[-2]

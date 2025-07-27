@@ -2,9 +2,10 @@ import math
 import einops
 from jaxtyping import Float
 import torch as t
-from typing import Optional
+from typing import Any, Optional
 
 from cs336_basics.softmax import softmax
+from torch.distributed.tensor import distribute_tensor, Replicate, Shard
 
 def scaled_dot_product_attention(
     q: Float[t.Tensor, "... n d"],
@@ -18,7 +19,8 @@ def scaled_dot_product_attention(
     # Note that mask = False means "ignore". It's more like an "allow mask".
     z = (q_k / math.sqrt(d))
     if mask is not None:
-        z += t.where(mask == False, -math.inf, 0)
+        add = t.where(mask == False, -math.inf, 0)
+        z += add
     z = softmax(z, dim=-1)
 
     return einops.einsum(z, v, "... n m, ... m d -> ... n d")
