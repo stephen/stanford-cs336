@@ -203,7 +203,7 @@ class DistributedTrainer:
                 self._training_step(x, label)
 
             rank = dist.get_rank() if dist.is_initialized() else "none"
-            prof.export_chrome_trace(f"nccl_trace_rank{rank}.json")
+            prof.export_chrome_trace(f"./traces/nccl_trace_rank{rank}.json")
             exit(0)
         else:
             self._training_step(x, label)

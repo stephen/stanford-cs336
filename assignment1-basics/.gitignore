@@ -5,6 +5,7 @@ __pycache__/
 
 data/
 wandb/
+traces/
 
 # C extensions
 *.so
