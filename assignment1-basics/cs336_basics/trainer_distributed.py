@@ -206,7 +206,7 @@ class DistributedTrainer:
             prof.export_chrome_trace(f"./traces/nccl_trace_rank{rank}.json")
             exit(0)
         else:
-            self._training_step(x, label)
+            return self._training_step(x, label)
 
 
     def _training_step(self, x: t.Tensor, label: t.Tensor):
