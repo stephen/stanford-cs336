@@ -22,8 +22,8 @@ class MultiHeadSelfAttention(t.nn.Module):
         self.mesh = mesh
 
         # assert tp != -1, "-1 crashes"
-        # self.local_heads = n_heads // tp if tp else n_heads
-        self.local_heads = n_heads
+        self.local_heads = n_heads // tp if tp else n_heads
+        # self.local_heads = n_heads
         self.device = device
 
         assert ((rope_theta is None) == (rope_max_seq_length is None)), "rope_theta and rope_max_seq_length must both be specified or not"
@@ -47,14 +47,15 @@ class MultiHeadSelfAttention(t.nn.Module):
         # Note that the input shape here should be (h d) not (d h) because the weights
         # given to use in the adapter are annotated as "d_k d_in", i.e. in our notation
         # "d_heads d_model".
-        q = einops.rearrange(q, "... n (h d) -> ... h n d", h=self.local_heads)
-        k = einops.rearrange(k, "... n (h d) -> ... h n d", h=self.local_heads)
-        v = einops.rearrange(v, "... n (h d) -> ... h n d", h=self.local_heads)
+        h = self.local_heads if (self.mesh and not isinstance(q, DTensor)) else self.n_heads
+        q = einops.rearrange(q, "... n (h d) -> ... h n d", h=h)
+        k = einops.rearrange(k, "... n (h d) -> ... h n d", h=h)
+        v = einops.rearrange(v, "... n (h d) -> ... h n d", h=h)
 
 
         n = q.shape[-2]
         m = k.shape[-2]
-        if self.mesh:
+        if self.mesh and isinstance(q, DTensor):
             mask = DTensor.from_local(t.ones((n, m), device=self.device), device_mesh=self.mesh)
         else:
             mask = t.ones((n, m), device=self.device)

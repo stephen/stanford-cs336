@@ -47,7 +47,7 @@ class TransformerLM(t.nn.Module):
         self.output = t.nn.Linear(d_model, vocab_size, device=device)
 
         if self.mesh and tp > 1:
-            local_attn_proj = False
+            local_attn_proj = True
             layer_tp_plan = {
                 "attn.Wq": ColwiseParallel(use_local_output=local_attn_proj),
                 "attn.Wk": ColwiseParallel(use_local_output=local_attn_proj),
