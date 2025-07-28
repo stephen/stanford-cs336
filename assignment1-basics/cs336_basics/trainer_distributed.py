@@ -87,6 +87,8 @@ class TrainingArgs:
     loss_parallel: bool = False
     fsdp: bool = False
 
+    profile: bool = False
+
 
 class DistributedTrainer:
     def __init__(self, args: TrainingArgs, mesh: Any):
@@ -154,7 +156,7 @@ class DistributedTrainer:
         #     module.register_full_backward_hook(partial(backward_hook_complete, name))
 
         # When logging parameters, compile doesn't play well.
-        if self.args.compile and self.args.wandb_log == "gradients":
+        if self.args.compile and self.args.wandb_log not in ["parameters", "all"]:
             self.model.compile(backend=default_backend)
 
         self.optimizer = AdamW(
@@ -179,7 +181,8 @@ class DistributedTrainer:
             wandb.watch(self.model, log=cast(Literal["gradients", "parameters", "all"], self.args.wandb_log), log_freq=10)
 
     def teardown(self):
-        dist.destroy_process_group()
+        if dist.is_initialized():
+            dist.destroy_process_group()
         del self.tokenizer
         del self.training_set
         del self.validation_set
@@ -187,26 +190,36 @@ class DistributedTrainer:
         del self.model
 
     def training_step(self, x: t.Tensor, label: t.Tensor):
+        if self.args.profile:
+            with profiler.profile(
+                activities=[
+                    profiler.ProfilerActivity.CPU,
+                    profiler.ProfilerActivity.CUDA,
+                ],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            ) as prof:
+                self._training_step(x, label)
 
-        with profiler.profile(
-            activities=[
-                profiler.ProfilerActivity.CPU,
-                profiler.ProfilerActivity.CUDA,
-            ],
-            record_shapes=True,
-            profile_memory=True,
-            with_stack=True,
-        ) as prof:
-            output = self.model(x)
-            if self.args.loss_parallel:
-                with loss_parallel():
-                    loss = t.nn.functional.cross_entropy(output.flatten(0, 1), label.flatten(0, 1))
-                    loss.backward()
-            else:
-                if isinstance(label, DTensor):
-                    label = label.to_local()
-                loss = cross_entropy(output, label)
+            rank = dist.get_rank() if dist.is_initialized() else "none"
+            prof.export_chrome_trace(f"nccl_trace_rank{rank}.json")
+            exit(0)
+        else:
+            self._training_step(x, label)
+
+
+    def _training_step(self, x: t.Tensor, label: t.Tensor):
+        output = self.model(x)
+        if self.args.loss_parallel:
+            with loss_parallel():
+                loss = t.nn.functional.cross_entropy(output.flatten(0, 1), label.flatten(0, 1))
                 loss.backward()
+        else:
+            if isinstance(label, DTensor):
+                label = label.to_local()
+            loss = cross_entropy(output, label)
+            loss.backward()
 
         # if self.args.clip_gradient_to_max_norm is not None:
         #     clip_gradients(
@@ -214,11 +227,9 @@ class DistributedTrainer:
         #         self.args.clip_gradient_to_max_norm,
         #     )
 
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
-        prof.export_chrome_trace(f"nccl_trace_rank{dist.get_rank()}.json")
-        exit(0)
         return loss
 
     def evaluate(self):

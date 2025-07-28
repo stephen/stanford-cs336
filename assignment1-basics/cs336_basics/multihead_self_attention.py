@@ -22,7 +22,7 @@ class MultiHeadSelfAttention(t.nn.Module):
         self.mesh = mesh
 
         # assert tp != -1, "-1 crashes"
-        self.local_heads = n_heads // tp if tp else n_heads
+        self.local_heads = n_heads // tp if tp and tp != -1 else n_heads
         # self.local_heads = n_heads
         self.device = device
 
